@@ -1,9 +1,13 @@
-# snage
-Type Ia supernova prompt vs delayed underlying population
+# snprop
+Type Ia supernova underlying population distribution modelling.
 
 # Installation
 
-using git
+```bash
+git clone https://github.com/MickaelRigault/snprop.git
+cd snprop
+python setup.py install
+```
 
 # Concept
 
@@ -66,8 +70,16 @@ To visualise the correlation between two SN properties, say e.g. stretch and mas
 
 
 ```python
-fig = pdmodel.show_scatter("mass","hr", colorkey="prompt")
+fig = pdmodel.show_scatter("mass","stretch", colorkey="prompt")
 ```
 <p align="left">
-  <img src="figures/snstretch_pdfs.png" width="350" title="hover text">
+  <img src="figures/stretch_mass_scatter.png" width="350" title="hover text">
 </p>
+
+### Change the underlying population properties
+
+The pdmodel install has all the `set_distprop_{which}` methods where `which` is any of the SN property. Change that to change the modeling. 
+
+### fraction of prompt as a function of redshift.
+
+pdmodel has a method `deltaz(z)` that returns the fraction of prompt at the given z ; z can by a list/array. This is what is used by `pdmodel.show_pdf()`
