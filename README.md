@@ -3,7 +3,11 @@ Type Ia supernova underlying population distribution modelling.
 
 # Installation
 
-using git
+```bash
+git clone https://github.com/MickaelRigault/snprop.git
+cd snprop
+python setup.py install
+```
 
 # Concept
 
