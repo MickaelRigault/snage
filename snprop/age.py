@@ -394,7 +394,9 @@ class PrompDelayModel( object ):
             pdf = [pdf]
         for pdf_,z_ in zip(pdf, z):
             ax.plot(xx, pdf_, color=mpl.cm.get_cmap(cmap)(z_/zmax) if z_ is not None else "k", **kwargs)
-            
+
+
+        ax.set_xlabel(which, fontsize="large")
         return fig
 
     def show_scatter(self, xkey, ykey, colorkey="prompt", ax=None, **kwargs):
