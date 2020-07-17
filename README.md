@@ -1,5 +1,5 @@
-# snage
-Type Ia supernova prompt vs delayed underlying population
+# snprop
+Type Ia supernova underlying population distribution modelling.
 
 # Installation
 
