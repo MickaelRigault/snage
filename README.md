@@ -66,8 +66,8 @@ To visualise the correlation between two SN properties, say e.g. stretch and mas
 
 
 ```python
-fig = pdmodel.show_scatter("mass","hr", colorkey="prompt")
+fig = pdmodel.show_scatter("mass","stretch", colorkey="prompt")
 ```
 <p align="left">
-  <img src="figures/snstretch_pdfs.png" width="350" title="hover text">
+  <img src="figures/stretch_mass_scatter.png" width="350" title="hover text">
 </p>
