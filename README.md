@@ -29,7 +29,7 @@ from snprop import age
 pdmodel = age.PrompDelayModel()
 ```
 
-To vizualise the underlying distribution of say, stretch, at _z=0.05_, _z=0.5_ and _z=1_
+To vizualise the underlying distribution of say, stretch, at _z=0.05_, _z=0.5_ and _z=1_ (the color is the redshift (blue to red) up to, in that case, `zmax=1`.
 
 ```python
 fig = pdmodel.show_pdf("stretch", z=[0.05, 0.5, 1], zmax=1)
