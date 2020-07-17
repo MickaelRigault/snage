@@ -425,6 +425,9 @@ class PrompDelayModel( object ):
             fig = ax.figure
 
         ax.scatter(self.sample[xkey], self.sample[ykey], c=self.sample[colorkey], **kwargs)
+
+        ax.set_xlabel(xkey, fontsize="large")
+        ax.set_ylabel(ykey, fontsize="large")
         return fig
 
     # ---------------- #
