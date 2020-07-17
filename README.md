@@ -44,11 +44,9 @@ Then to draw a random realisation of a sample of 300 SNeIa, made of 40% of promp
 ```python
 pdmodel.draw_sample(0.4, size=300)
 ```
-the sample is stored as a pandas datafraom in 
+the sample is stored as a pandas datafraom in `pdmodel.sample`
 ```python
-pdmodel.sample
-```
-```
+print(pdmodel.sample)
 |     |        color |    stretch |     mass |          hr |   prompt | redshift   |
 |----:|-------------:|-----------:|---------:|------------:|---------:|:-----------|
 |   0 | -0.0747748   | -0.765766  |  9.11812 | -0.039039   |        1 |            |
@@ -63,3 +61,13 @@ pdmodel.sample
 | 298 |  0.123423    | -0.115115  |  8.94995 |  0.00900901 |        0 |            |
 | 299 | -0.116216    | -0.895896  | 10.4494  |  0.001001   |        0 |            |
 ```
+
+To visualise the correlation between two SN properties, say e.g. stretch and mass:
+
+
+```python
+fig = pdmodel.show_scatter("mass","hr", colorkey="prompt")
+```
+<p align="left">
+  <img src="figures/snstretch_pdfs.png" width="350" title="hover text">
+</p>
