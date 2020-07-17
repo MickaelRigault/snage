@@ -74,7 +74,7 @@ fig = pdmodel.show_scatter("mass","stretch", colorkey="prompt")
 
 ### Change the underlying population properties
 
-The pdmodel install has all the `set_distprop_{which}` method where `which` are any of the SN properties. Change that to change the modeling. 
+The pdmodel install has all the `set_distprop_{which}` methods where `which` is any of the SN property. Change that to change the modeling. 
 
 ### fraction of prompt as a function of redshift.
 
