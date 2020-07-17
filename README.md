@@ -38,3 +38,28 @@ fig = pdmodel.show_pdf("stretch", z=[0.05, 0.5, 1], zmax=1)
 <p align="left">
   <img src="figures/snstretch_pdfs.png" width="350" title="hover text">
 </p>
+
+Then to draw a random realisation of a sample of 300 SNeIa, made of 40% of prompt ones, simply do:
+
+```python
+pdmodel.draw_sample(0.4, size=300)
+```
+the sample is stored as a pandas datafraom in 
+```python
+pdmodel.sample
+```
+```
+color	stretch	mass	hr	prompt	redshift
+0	-0.074775	-0.765766	9.118118	-0.039039	1.0	None
+1	0.067568	0.555556	9.370370	0.107107	1.0	None
+2	-0.022523	-0.405405	9.223223	0.045045	1.0	None
+3	-0.044144	0.975976	8.732733	0.049049	1.0	None
+4	0.018919	0.725726	10.036036	0.129129	1.0	None
+...	...	...	...	...	...	...
+295	0.021622	0.495495	11.094094	0.011011	0.0	None
+296	-0.045946	-1.426426	11.248248	-0.063063	0.0	None
+297	0.027027	1.136136	10.477477	-0.049049	0.0	None
+298	0.123423	-0.115115	8.949950	0.009009	0.0	None
+299	-0.116216	-0.895896	10.449449	0.001001	0.0	None
+```
+
