@@ -71,3 +71,11 @@ fig = pdmodel.show_scatter("mass","stretch", colorkey="prompt")
 <p align="left">
   <img src="figures/stretch_mass_scatter.png" width="350" title="hover text">
 </p>
+
+### Change the underlying population properties
+
+The pdmodel install has all the `set_distprop_{which}` method where `which` are any of the SN properties. Change that to change the modeling. 
+
+### fraction of prompt as a function of redshift.
+
+pdmodel has a method `deltaz(z)` that returns the fraction of prompt at the given z ; z can by a list/array. This is what is used by `pdmodel.show_pdf()`
