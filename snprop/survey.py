@@ -161,12 +161,14 @@ class PrompDelayModel(object):
         mode1_pdf = stats.norm.pdf(x,
                                    loc=self.distprop_stretch["mode1"]["loc"],
                                    scale=np.sqrt(
-                                       self.distprop_stretch["mode1"]["scale"]**2 + dx**2)
+                                       self.distprop_stretch["mode1"]
+                                       ["scale"]**2 + dx**2)
                                    )
         mode2_pdf = stats.norm.pdf(x,
                                    loc=self.distprop_stretch["mode2"]["loc"],
                                    scale=np.sqrt(
-                                       self.distprop_stretch["mode2"]["scale"]**2 + dx**2)
+                                       self.distprop_stretch["mode2"]
+                                       ["scale"]**2 + dx**2)
                                    )
 
         return (fprompt * mode1_pdf
@@ -248,7 +250,8 @@ class PrompDelayModel(object):
 
     # - HR
     def get_distpdf_hr(self, x, fprompt, dx=None, **kwargs):
-        """  get the pdf of the standardised Hubble Residual distribution at the given values.
+        """  get the pdf of the standardised Hubble Residual distribution at
+        the given values.
 
         Parameters
         ----------
@@ -272,10 +275,14 @@ class PrompDelayModel(object):
         if dx is None:
             dx = 0
 
-        prompt = stats.norm.pdf(x, loc=self.distprop_hr["prompt"]["mean"],
-                                scale=np.sqrt(self.distprop_hr["prompt"]["sigma"]**2+dx**2))
-        delayed = stats.norm.pdf(x, loc=self.distprop_hr["delayed"]["mean"],
-                                 scale=np.sqrt(self.distprop_hr["delayed"]["sigma"]**2+dx**2))
+        prompt = stats.norm.pdf(x,
+                                loc=self.distprop_hr["prompt"]["mean"],
+                                scale=np.sqrt(self.distprop_hr["prompt"]\
+                                              ["sigma"]**2+dx**2))
+        delayed = stats.norm.pdf(x,
+                                 loc=self.distprop_hr["delayed"]["mean"],
+                                 scale=np.sqrt(self.distprop_hr["delayed"]\
+                                               ["sigma"]**2+dx**2))
         return fprompt*prompt + (1-fprompt) * delayed
 
     # ---------- #
