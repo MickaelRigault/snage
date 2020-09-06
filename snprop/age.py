@@ -350,22 +350,26 @@ class PrompDelayModel( object ):
         # - Color        
         self._sample = pandas.DataFrame(data)
 
-    def get_subsample(self, index_pdf, size):
+    def get_subsample(self, size, index_pdf=None):
         """ get the subsample (DataFrame) of the main self.sample given the pdf of each index.
         
         Parameters
         ----------
-        index_pdf: [array]
-             array of float of the same size if self.sample
-
         size: [int]
             size of the new subsample
             
+        index_pdf: [array/None] -optional-
+             array of float of the same size if self.sample
+             None means equal weight to all indexes.
+
         Returns
         -------
         DataFrame
         """
-        subsample_index = np.random.choice(self.sample.index, p=index_pdf/np.sum(index_pdf,axis=0), size=size, replace=False)
+        if index_pdf is not None:
+            index_pdf = index_pdf/np.sum(index_pdf,axis=0)
+            
+        subsample_index = np.random.choice(self.sample.index, p=index_pdf, size=size, replace=False)
         return self.sample[self.sample.index.isin(subsample_index)]
     
         
