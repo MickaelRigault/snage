@@ -92,10 +92,10 @@ Let's imagine you only to randomly draw 140 targets from the sample you previous
 sub_dataframe = pdmodel.get_subsample(140)
 ```
 
-Now, if you want to get a subsample that follows a given distribution a parameter, e.g. a mass normally distributed at `10^10` with a dispersion of `0.5 dex`:
+Now, if you want to get a subsample that follows a given distribution a parameter, e.g. a mass normally distributed at `10^10` with a dispersion of `0.2 dex`:
 ```python
 from scipy import stats
-index_pdf = stats.norm.pdf(pdmodel.sample["mass"], loc=10, scale=0.5)
+index_pdf = stats.norm.pdf(pdmodel.sample["mass"], loc=10, scale=0.2)
 weightedsub_dataframe = pdmodel.get_subsample(140, index_pdf=index_pdf)
 ```
 <p align="left">
