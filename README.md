@@ -27,6 +27,7 @@ The prompt and delayed modeling of the host mass step is not satisfying yet:
  
 # Usage
 
+## Loading a PromptDelayModel instance
 Load an instance of the prompt and delayed object (`PrompDelayModel`)
 
 ```python
@@ -34,17 +35,8 @@ from snprop import age
 pdmodel = age.PrompDelayModel()
 ```
 
-To vizualise the underlying distribution of say, stretch, at _z=0.05_, _z=0.5_ and _z=1_ (the color is the redshift (blue to red) up to, in that case, `zmax=1`.
-
-```python
-fig = pdmodel.show_pdf("stretch", z=[0.05, 0.5, 1], zmax=1)
-```
-
-<p align="left">
-  <img src="figures/snstretch_pdfs.png" width="350" title="hover text">
-</p>
-
-Then to draw a random realisation of a sample of 300 SNeIa, made of 40% of prompt ones, simply do:
+## Draw a random SN sample.
+Then to draw a random realisation of a sample of 200 SNeIa, at `z=0.4`, simply do:
 
 ```python
 pdmodel.draw_sample(0.4, size=200)
@@ -94,9 +86,35 @@ pdmodel.sample
 | 198 | -0.0351351   |  0.415415   |     1 |  8.93594 | -0.049049   | 0.5       |,
 | 199 | -0.0747748   | -1.62663    |     0 | 10.2603  |  0.003003   | 0.5       |
 ```
+### How is the sample built ?
+First, the SN ages are randomly drawn following the underlying probability of young (1) and old (0) SNe Ia at a given redshift.
+Then for each age (1 or 0) the SN parameters are randomly drawn following the underlying distribution associated to this age population.
 
+## fraction of prompt as a function of redshift.
+
+pdmodel has a method `deltaz(z)` that returns the fraction of prompt at the given z ; z can by a list/array. This is what is used by `pdmodel.show_pdf()`
+
+
+## Parameter distributions
+
+To vizualise the underlying distribution of say, stretch, at _z=0.05_, _z=0.5_ and _z=1_ (the color is the redshift (blue to red) up to, in that case, `zmax=1`.
+
+```python
+fig = pdmodel.show_pdf("stretch", z=[0.05, 0.5, 1], zmax=1)
+```
+
+<p align="left">
+  <img src="figures/snstretch_pdfs.png" width="350" title="hover text">
+</p>
+
+### Change the underlying population properties
+
+The pdmodel install has all the `set_distprop_{which}` methods where `which` is any of the SN property. Change that to change the modeling. 
+
+## Parameter correlations
+
+If two parameters are non-trivially connected to age, they will be correlated. 
 To visualise the correlation between two SN properties, say e.g. stretch and mass:
-
 
 ```python
 fig = pdmodel.show_scatter("mass","stretch", colorkey="age")
@@ -104,11 +122,3 @@ fig = pdmodel.show_scatter("mass","stretch", colorkey="age")
 <p align="left">
   <img src="figures/stretch_mass_scatter.png" width="350" title="hover text">
 </p>
-
-### Change the underlying population properties
-
-The pdmodel install has all the `set_distprop_{which}` methods where `which` is any of the SN property. Change that to change the modeling. 
-
-### fraction of prompt as a function of redshift.
-
-pdmodel has a method `deltaz(z)` that returns the fraction of prompt at the given z ; z can by a list/array. This is what is used by `pdmodel.show_pdf()`
