@@ -257,11 +257,10 @@ class PrompDelayModel( object ):
             return np.asarray([np.random.choice(mm, size=size, p=pdf_) for pdf_ in pdf])
         raise ValueError("pdf shape must be 1 or 2.")
 
-
     def draw_age(self, fprompt=None, z=None, size=1):
         """ """
         fprompt = self._read_fprompt_z_(fprompt=fprompt, z=z)
-        s = np.random.random(size=[len(fprompt),size])
+        s = np.random.random(size=[len(np.atleast_1d(fprompt)),size])
         flag_p = s<fprompt
         young = np.zeros(s.shape)
         young[flag_p] = 1
@@ -341,10 +340,12 @@ class PrompDelayModel( object ):
         >self.sample is in that case a dataframe with the length of 3000 (1000 per redshift)
         """
         import pandas
+        z = np.atleast_1d(z)
         ages = self.draw_age(fprompt=fprompt, z=z, size=size)
         nprompt  = np.sum(ages, axis=1)
         ndelayed = size - nprompt
-        data = {k: np.concatenate(self.draw_property(k,nprompt, ndelayed)) for k in ["color","stretch","age", "mass", "hr"]}
+        data = {k: np.concatenate(self.draw_property(k,nprompt, ndelayed)) if len(nprompt)>1 else self.draw_property(k,nprompt, ndelayed)
+                    for k in ["color","stretch","age", "mass", "hr"]}
         data["z"] = np.concatenate((np.ones((len(z),size)).T*z).T) if z is not None else None
         # - Color        
         self._sample = pandas.DataFrame(data)
