@@ -49,13 +49,7 @@ print(pdmodel.sample)
 |   0 | -0.0666667   |  1.20621   |     1 | 10.9329  | -0.125125   | 0.4 |,
 |   1 | -0.063964    |  1.54655   |     1 |  9.47548 |  0.0950951  | 0.4 |,
 |   2 |  0.0612613   |  0.525526  |     1 |  9.73473 | -0.047047   | 0.4 |,
-|   3 |  0.0162162   | -0.0850851 |     1 | 10.022   | -0.119119   | 0.4 |,
-|   4 | -0.0522523   | -0.525526  |     1 | 10.043   |  0.149149   | 0.4 |,
-|   5 |  0.0027027   |  0.905906  |     1 |  9.33534 |  0.049049   | 0.4 |,
 ...
-| 194 |  0.124324    |  0.495495  |     0 | 10.2392  | -0.0930931  | 0.4 |,
-| 195 | -0.0765766   | -0.835836  |     0 | 10.4915  | -0.0710711  | 0.4 |,
-| 196 | -0.0558559   | -0.685686  |     0 | 11.2763  |  0.021021   | 0.4 |,
 | 197 |  0.0234234   |  1.07608   |     0 | 11.1782  | -0.0710711  | 0.4 |,
 | 198 |  0.0342342   |  1.03604   |     0 | 10.2392  |  0.023023   | 0.4 |,
 | 199 |  0.0603604   | -0.195195  |     0 | 10.7227  | -0.0830831  | 0.4 |
@@ -76,24 +70,41 @@ pdmodel.sample
 |   2 | -0.0918919   |  0.385385   |     0 | 11.2272  | -0.127127   | 0.0060404 |,
 |   3 |  0.0774775   |  0.895896   |     0 |  9.86086 | -0.189189   | 0.0060404 |,
 |   4 |  0.0135135   |  0.365365   |     1 |  9.29329 |  0.037037   | 0.0110808 |,
-|   5 | -0.136036    |  0.265265   |     0 | 11.4234  | -0.185185   | 0.0110808 |,
 ...
-| 193 |  0.0864865   |  0.925926   |     0 | 11.0591  | -0.001001   | 0.484879  |,
-| 194 |  0.0252252   |  1.13614    |     1 |  9.16717 | -0.021021   | 0.489919  |,
 | 195 | -0.0558559   | -0.805806   |     0 | 10.0991  |  0.0530531  | 0.489919  |,
 | 196 |  0.0315315   |  0.865866   |     1 |  9.58759 | -0.0510511  | 0.49496   |,
 | 197 | -0.0333333   |  0.895896   |     1 | 10.1271  |  0.003003   | 0.49496   |,
 | 198 | -0.0351351   |  0.415415   |     1 |  8.93594 | -0.049049   | 0.5       |,
 | 199 | -0.0747748   | -1.62663    |     0 | 10.2603  |  0.003003   | 0.5       |
 ```
-### How is the sample built ?
+#### How is the sample built ?
 First, the SN ages are randomly drawn following the underlying probability of young (1) and old (0) SNe Ia at a given redshift.
 Then for each age (1 or 0) the SN parameters are randomly drawn following the underlying distribution associated to this age population.
 
-## fraction of prompt as a function of redshift.
+#### Fraction of prompt as a function of redshift.
 
 pdmodel has a method `deltaz(z)` that returns the fraction of prompt at the given z ; z can by a list/array. This is what is used by `pdmodel.show_pdf()`
 
+## Draw a subsample
+
+Let's imagine you only to randomly draw 140 targets from the sample you previously constructed, simply do:
+```python
+sub_dataframe = pdmodel.get_subsample(140)
+```
+
+Now, if you want to get a subsample that follows a given distribution a parameter, e.g. a mass normally distributed at `10^10` with a dispersion of `0.5 dex`:
+```python
+from scipy import stats
+index_pdf = stats.norm.pdf(pdmodel.sample["mass"], loc=10, scale=0.5)
+weightedsub_dataframe = pdmodel.get_subsample(140, index_pdf=index_pdf)
+```
+<p align="left">
+  <img src="figures/sample_draw_masses.png" width="350" title="hover text">
+</p>
+
+
+#### Remark about weighted draw
+If you parameters used to weight the indexes is non-trivially connected to the age parameters, then the fraction of young/old (1/0) will be changed in the subsample, thus so are the SN properties connected to age, like the stretch.
 
 ## Parameter distributions
 
