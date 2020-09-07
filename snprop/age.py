@@ -257,11 +257,10 @@ class PrompDelayModel( object ):
             return np.asarray([np.random.choice(mm, size=size, p=pdf_) for pdf_ in pdf])
         raise ValueError("pdf shape must be 1 or 2.")
 
-
     def draw_age(self, fprompt=None, z=None, size=1):
         """ """
         fprompt = self._read_fprompt_z_(fprompt=fprompt, z=z)
-        s = np.random.random(size=[len(fprompt),size])
+        s = np.random.random(size=[len(np.atleast_1d(fprompt)),size])
         flag_p = s<fprompt
         young = np.zeros(s.shape)
         young[flag_p] = 1
@@ -341,30 +340,36 @@ class PrompDelayModel( object ):
         >self.sample is in that case a dataframe with the length of 3000 (1000 per redshift)
         """
         import pandas
+        z = np.atleast_1d(z)
         ages = self.draw_age(fprompt=fprompt, z=z, size=size)
         nprompt  = np.sum(ages, axis=1)
         ndelayed = size - nprompt
-        data = {k: np.concatenate(self.draw_property(k,nprompt, ndelayed)) for k in ["color","stretch","age", "mass", "hr"]}
+        data = {k: np.concatenate(self.draw_property(k,nprompt, ndelayed)) if len(nprompt)>1 else self.draw_property(k,nprompt, ndelayed)
+                    for k in ["color","stretch","age", "mass", "hr"]}
         data["z"] = np.concatenate((np.ones((len(z),size)).T*z).T) if z is not None else None
         # - Color        
         self._sample = pandas.DataFrame(data)
 
-    def get_subsample(self, index_pdf, size):
+    def get_subsample(self, size, index_pdf=None):
         """ get the subsample (DataFrame) of the main self.sample given the pdf of each index.
         
         Parameters
         ----------
-        index_pdf: [array]
-             array of float of the same size if self.sample
-
         size: [int]
             size of the new subsample
             
+        index_pdf: [array/None] -optional-
+             array of float of the same size if self.sample
+             None means equal weight to all indexes.
+
         Returns
         -------
         DataFrame
         """
-        subsample_index = np.random.choice(self.sample.index, p=index_pdf/np.sum(index_pdf,axis=0), size=size, replace=False)
+        if index_pdf is not None:
+            index_pdf = index_pdf/np.sum(index_pdf,axis=0)
+            
+        subsample_index = np.random.choice(self.sample.index, p=index_pdf, size=size, replace=False)
         return self.sample[self.sample.index.isin(subsample_index)]
     
         

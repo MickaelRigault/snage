@@ -11,7 +11,7 @@ MAINTAINER_EMAIL = 'm.rigault@ipnl.in2p3.fr'
 URL = 'https://github.com/MickaelRigault/snprop/'
 LICENSE = 'Apache 2.0'
 DOWNLOAD_URL = 'https://github.com/MickaelRigault/snprop/tarball/0.2'
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 
 try:
     from setuptools import setup, find_packages
