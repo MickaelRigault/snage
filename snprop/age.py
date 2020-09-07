@@ -255,8 +255,19 @@ class PrompDelayModel( object ):
             return np.random.choice(a, size=size, p=pdf)
         elif len(np.shape(pdf))==2:
             return np.asarray([np.random.choice(mm, size=size, p=pdf_) for pdf_ in pdf])
-        raise ValueError("pdf size must be 1 or 2.")
-    
+        raise ValueError("pdf shape must be 1 or 2.")
+
+
+    def draw_age(self, fprompt=None, z=None, size=1):
+        """ """
+        fprompt = self._read_fprompt_z_(fprompt=fprompt, z=z)
+        s = np.random.random(size=[len(fprompt),size])
+        flag_p = s<fprompt
+        young = np.zeros(s.shape)
+        young[flag_p] = 1
+        return young
+
+        
     def draw_property(self, which, nprompt, ndelayed, concat=True):
         """ get a random realisation of the SN Ia property you want
         
@@ -268,6 +279,7 @@ class PrompDelayModel( object ):
             - color
             - hr
             - mass
+            - age
 
         nprompt, ndelayed: [ints]
             Number of prompt and delayed in the sample respectively.
@@ -279,16 +291,27 @@ class PrompDelayModel( object ):
         -------
         list of properties (see concat)
         """
+        if which in ["age"]:
+            if len(np.atleast_1d(nprompt))==1:
+                return np.concatenate([np.ones(int(nprompt)),np.zeros(int(ndelayed))], axis=0)
+            else:
+                return [np.concatenate([np.ones(int(p_)),np.zeros(int(d_))], axis=0) for p_,d_ in zip(nprompt, ndelayed)]
+                             
         xx_ = self.property_range[which]
         prompt_pdf = getattr(self,f"get_distpdf_{which}")(xx_, 1)
         delayed_pdf = getattr(self,f"get_distpdf_{which}")(xx_, 0)
-        
-        prompt_prop = self._draw_(xx_, prompt_pdf/np.sum(prompt_pdf, axis=0), size=nprompt)
-        delayed_prop = self._draw_(xx_, delayed_pdf/np.sum(delayed_pdf, axis=0), size=ndelayed)
-        return np.concatenate([prompt_prop,delayed_prop], axis=0) if concat else [prompt_prop,delayed_prop]
+
+        if len(np.atleast_1d(nprompt))==1:
+            prompt_prop  = self._draw_(xx_, prompt_pdf/np.sum(prompt_pdf, axis=0), size=int(nprompt))
+            delayed_prop = self._draw_(xx_, delayed_pdf/np.sum(delayed_pdf, axis=0), size=int(ndelayed))
+            return np.concatenate([prompt_prop,delayed_prop], axis=0) if concat else [prompt_prop,delayed_prop]
+        else:
+            prompt_prop  = [self._draw_(xx_, prompt_pdf/np.sum(prompt_pdf, axis=0), size=int(nprompt_)) for nprompt_ in np.atleast_1d(nprompt)]
+            delayed_prop = [self._draw_(xx_, delayed_pdf/np.sum(delayed_pdf, axis=0), size=int(ndelayed_)) for ndelayed_ in np.atleast_1d(ndelayed)]
+            return [np.concatenate([p_,d_], axis=0) if concat else [p_,d_] for p_,d_ in zip(prompt_prop,delayed_prop)]
     
         
-    def draw_sample(self, fprompt=None, z=None, size=None):
+    def draw_sample(self, fprompt=None, z=None, size=1):
         """ draw a random realisation of a sample.
         It will be stored as self.sample (pandas.DataFrame)
 
@@ -311,21 +334,40 @@ class PrompDelayModel( object ):
         Returns
         -------
         Void (sets self.sample)
+
+        Usage:
+        -----
+        >self.draw_sample(z=[0.1,0.5,1], size=1000)
+        >self.sample is in that case a dataframe with the length of 3000 (1000 per redshift)
         """
         import pandas
-        fprompt = self._read_fprompt_z_(fprompt=fprompt, z=z)
-
-        nprompt = int(size*fprompt)
-        ndelayed = size-nprompt
-        
+        ages = self.draw_age(fprompt=fprompt, z=z, size=size)
+        nprompt  = np.sum(ages, axis=1)
+        ndelayed = size - nprompt
+        data = {k: np.concatenate(self.draw_property(k,nprompt, ndelayed)) for k in ["color","stretch","age", "mass", "hr"]}
+        data["z"] = np.concatenate((np.ones((len(z),size)).T*z).T) if z is not None else None
         # - Color        
-        self._sample = pandas.DataFrame(
-                       {"color":self.draw_property("color", nprompt, ndelayed),
-                        "stretch":self.draw_property("stretch", nprompt, ndelayed),
-                        "mass":self.draw_property("mass", nprompt, ndelayed),
-                        "hr":self.draw_property("hr", nprompt, ndelayed),
-                        "prompt": np.concatenate([np.ones(nprompt),np.zeros(ndelayed)], axis=0),
-                        "redshift":z})
+        self._sample = pandas.DataFrame(data)
+
+    def get_subsample(self, index_pdf, size):
+        """ get the subsample (DataFrame) of the main self.sample given the pdf of each index.
+        
+        Parameters
+        ----------
+        index_pdf: [array]
+             array of float of the same size if self.sample
+
+        size: [int]
+            size of the new subsample
+            
+        Returns
+        -------
+        DataFrame
+        """
+        subsample_index = np.random.choice(self.sample.index, p=index_pdf/np.sum(index_pdf,axis=0), size=size, replace=False)
+        return self.sample[self.sample.index.isin(subsample_index)]
+    
+        
 
     def show_pdf(self, which, fprompt=None, z=None, detailed=False, ax=None,
                      cmap="coolwarm", zmax=2, **kwargs):
@@ -399,7 +441,7 @@ class PrompDelayModel( object ):
         ax.set_xlabel(which, fontsize="large")
         return fig
 
-    def show_scatter(self, xkey, ykey, colorkey="prompt", ax=None, **kwargs):
+    def show_scatter(self, xkey, ykey, colorkey="age", ax=None, **kwargs):
         """ Show the scatter plot of the sample parameters
         
         Parameters
