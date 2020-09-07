@@ -1,21 +1,88 @@
-""" Prompt vs. Delayed model of the SN population """
+"""Prompt vs. Delayed model of the SN population """
+import pandas
 import numpy as np
 from scipy import stats
+import matplotlib.pyplot as mpl
 
 from .tools import asym_gaussian
 
 
-class PrompDelayModel(object):
+# =========================================================================== #
+#                                                                             #
+#                                SURVEY CLASS                                 #
+#                                                                             #
+# =========================================================================== #
 
-    def __init__(self):
-        """ """
+class survey(object):
 
-    # ====================== #
-    #     Methods            #
-    # ====================== #
+    # =================================================================== #
+    #                              Variables                              #
+    # =================================================================== #
+
+    surveys = ['SNF', 'SDSS', 'PS1', 'SNLS', 'HST']
+
+    # Based on SK16's C11 model for SDSS and SNLS,
+    #          SK18's C11 model for PS1,
+    #          NR20's     model for SNF and HST
+    all_cparams = {'SNF':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   'SDSS':  # SK16 table 1 C11
+                   {'mu': -0.061, 'sigmadown': 0.023, 'sigmaup': 0.083},
+                   'PS1':  # SK18 table 3 C11
+                   {'mu': -0.100, 'sigmadown': 0.003, 'sigmaup': 0.134},
+                   'SNLS':  # SK16 table 1 C11
+                   {'mu': -0.112, 'sigmadown': 0.003, 'sigmaup': 0.144},
+                   'HST':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1}}
+
+    all_xparams = {'SNF':  # NR20 table 4
+                   {'mu': 0.68, 'sigmadown': 1.34, 'sigmaup': 0.41},
+                   'SDSS':  # SK16 table 1 C11
+                   {'mu': 1.142, 'sigmadown': 1.652, 'sigmaup': 0.104},
+                   'PS1':  # SK18 table 3 C11
+                   {'mu': 0.384, 'sigmadown': 0.987, 'sigmaup': 0.505},
+                   'SNLS':  # SK16 table 1 C11
+                   {'mu': 0.974, 'sigmadown': 1.236, 'sigmaup': 0.283},
+                   'HST':  # NR20 table 4
+                   {'mu': 0.964, 'sigmadown': 1.467, 'sigmaup': 0.235}}
+
+    all_mparams = {'SNF':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   'SDSS':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   'PS1':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   'SNLS':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   'HST':
+                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1}}
+
+    # =================================================================== #
+    #                               Initial                               #
+    # =================================================================== #
+
+    def __init__(self, surveyname, new=False):
+        """Sets the class parameters to given arguments"""
+        if (surveyname not in self.surveys) and not new:
+            raise KeyError(f"Survey must be in {self.surveys}, " +
+                           "{surveyname} given. Set new=True to create one")
+        self._surveyname = surveyname
+        if not new:
+            self._distprop_color = self.all_cparams[surveyname]
+            self._distprop_stretch = self.all_xparams[surveyname]
+            self._distprop_mass = self.all_mparams[surveyname]
+
+    # =================================================================== #
+    #                               Methods                               #
+    # =================================================================== #
+
+    # ------------------------------------------------------------------- #
+    #                               EXTFUNC                               #
+    # ------------------------------------------------------------------- #
+
     @staticmethod
     def deltaz(z, k=0.87, phi=2.8):
-        """ fraction of young SNeIa as a function of redshift.
+        """Fraction of young SNeIa as a function of redshift.
         from Rigault et al. 2018 (LsSFR paper)
 
         Parameters:
@@ -24,8 +91,8 @@ class PrompDelayModel(object):
         redshifts
 
         k: [float] -optional-
-        normalisation. 0.87 means that 50% of SNeIa are prompt at z\approx 0.05
-        (anchored by SNfactory)
+        normalisation. 0.87 means that 50% of SNeIa are prompt at z
+        \approx 0.05 (anchored by SNfactory)
 
         phi: [float] -optional-
         power law redshift dependency.
@@ -36,83 +103,53 @@ class PrompDelayModel(object):
         """
         return (k**(-1)*(1+z)**(-phi)+1)**(-1)
 
-    # -------- #
-    #  SETTER  #
-    # -------- #
-    # STRETCH
-    def set_distprop_stretch(self, mu1=0.37, sigma1=0.61,
-                             mu2=-1.22, sigma2=0.56, a=0.51):
-        """ Set the parameters of the SNe Ia stretch distribution.
+    # ------------------------------------------------------------------- #
+    #                               SETTER                                #
+    # ------------------------------------------------------------------- #
 
-        Following Nicolas, Rigault et al. 2020, the model is the following:
-        - prompt SNeIa are single moded, "Mode 1"
-        - delayed SNeIa are bimodal, a*"Model 1" + (1-a)*"Mode 2"
+        # ----------------------------------------------------------- #
+        #                           STRETCH                           #
+        # ----------------------------------------------------------- #
 
-        Parameters
-        ----------
-        mu1, sigma1: [float, float]
-            Mean and std of the mode 1
+    def set_distprop_color(self, mu=1, sigmaup=1, sigmadown=1):
+        """Set the parameters of the SNe Ia color distribution, modeled as
+        asymmetric gaussians."""
 
-        mu2, sigma2: [float, float]
-            Mean and std of the mode 2
+        self._distprop_color = {"mu": mu,
+                                "sigmadown": sigmadown,
+                                "sigmaup": sigmaup}
 
-        a: [float between 0 and 1]
-            The relative weight of mode 1 over mode 2 (0.5 means equal weight)
+        # ----------------------------------------------------------- #
+        #                            COLOR                            #
+        # ----------------------------------------------------------- #
 
+    def set_distprop_stretch(self, mu=1, sigmaup=1, sigmadown=1):
+        """Set the parameters of the SNe Ia stretch distribution, modeled as
+        asymmetric gaussians."""
 
+        self._distprop_stretch = {"mu": mu,
+                                  "sigmadown": sigmadown,
+                                  "sigmaup": sigmaup}
+
+        # ----------------------------------------------------------- #
+        #                          HOST MASS                          #
+        # ----------------------------------------------------------- #
+
+    def set_distprop_mass(self, mu=1, sigmaup=1, sigmadown=1):
+        """Set the parameters of the SNe Ia host mass distribution, modeled as
+        asymmetric gaussians.
         """
-        if a < 0 or a > 1:
-            raise ValueError(f"a must be between 0 and 1, {a} given")
+        self._distprop_mass = {"mu": mu,
+                               "sigmadown": sigmadown,
+                               "sigmaup": sigmaup}
 
-        self._distprop_stretch = {"mode1": {"loc": mu1, "scale": sigma1},
-                                  "mode2": {"loc": mu2, "scale": sigma2},
-                                  "a": a
-                                  }
+        # ----------------------------------------------------------- #
+        #                       HUBBLE RESIDUAL                       #
+        # ----------------------------------------------------------- #
 
-    # COLOR
-    def set_distprop_color(self, mu=-0.030,
-                           sigmaup=0.086, sigmadown=0.052,
-                           mu_delayed=None,
-                           sigmaup_delayed=None, sigmadown_delayed=None):
-        """ Set the parameters of the SNe Ia color distribution, modeled as
-        asymetric gaussians.
-
-        If *_delayed are not provided, prompt and delayed are assumed similar
-        (tested on mu_delayed)
-        """
-        if mu_delayed is None:
-            mu_delayed = mu
-            sigmaup_delayed = sigmaup
-            sigmadown_delayed = sigmadown
-
-        self._distprop_color = {"prompt": {"mu": mu,
-                                           "sigmaup": sigmaup,
-                                           "sigmadown": sigmadown},
-                                "delayed": {"mu": mu_delayed,
-                                            "sigmaup": sigmaup_delayed,
-                                            "sigmadown": sigmadown_delayed}
-                                }
-
-    # HOST MASS
-    def set_distprop_mass(self, mu=9.61,
-                          sigmaup=0.67, sigmadown=0.71,
-                          mu_delayed=10.79,
-                          sigmaup_delayed=0.52, sigmadown_delayed=0.82):
-        """ Set the parameters of the SNe Ia color distribution, modeled as
-        asymetric gaussians.
-        """
-        self._distprop_mass = {"prompt": {"mu": mu,
-                                          "sigmaup": sigmaup,
-                                          "sigmadown": sigmadown},
-                               "delayed": {"mu": mu_delayed,
-                                           "sigmaup": sigmaup_delayed,
-                                           "sigmadown": sigmadown_delayed}
-                               }
-
-    # HUBBLE RESIDUALS
     def set_distprop_hr(self, mean_prompt=0.075, sigma_prompt=0.1,
                         mean_delayed=-0.075, sigma_delayed=0.1):
-        """ Normal distribution for each age sample. (assuming 0.15 mag step).
+        """Normal distribution for each age sample. (assuming 0.15 mag step).
         """
         self._distprop_hr = {"prompt": {"mean": mean_prompt,
                                         "sigma": sigma_prompt},
@@ -122,28 +159,28 @@ class PrompDelayModel(object):
 
     # - Distortion of what is in Nature
 
-    # -------- #
-    # GETTER   #
-    # -------- #
+    # ------------------------------------------------------------------- #
+    #                               GETTER                                #
+    # ------------------------------------------------------------------- #
+
     def get_frac_prompt(self, z):
-        """ get the expected fraction of prompt SNe Ia as the given
+        """get the expected fraction of prompt SNe Ia as the given
         redshift(s) """
         if len(np.atleast_1d(z)) > 1:
             return self.deltaz(np.asarray(z)[:, None])
         return self.deltaz(z)
 
-    # - Stretch
-    def get_distpdf_stretch(self, x, fprompt, dx=None, **kwargs):
-        """ get the pdf of the stretch distribution at the given values.
+        # ----------------------------------------------------------- #
+        #                           STRETCH                           #
+        # ----------------------------------------------------------- #
+
+    def get_distpdf_stretch(self, x, dx=None, **kwargs):
+        """get the pdf of the stretch distribution at the given values.
 
         Parameters
         ----------
         x: [1d array]
             values where you want to estimate the pdf
-
-        fprompt: [float between 0 and 1]
-            Fraction of prompt. 0(1) means pure delayed(prompt)
-            Could be a list.
 
         dx: [1d array] -optional-
             measurement error added in quadrature to the model's std.
@@ -154,41 +191,29 @@ class PrompDelayModel(object):
         -------
         pdf values (or list of)
         """
+
         self.set_distprop_stretch(**kwargs)
         if dx is None:
             dx = 0
 
-        mode1_pdf = stats.norm.pdf(x,
-                                   loc=self.distprop_stretch["mode1"]["loc"],
-                                   scale=np.sqrt(
-                                       self.distprop_stretch["mode1"]
-                                       ["scale"]**2 + dx**2)
-                                   )
-        mode2_pdf = stats.norm.pdf(x,
-                                   loc=self.distprop_stretch["mode2"]["loc"],
-                                   scale=np.sqrt(
-                                       self.distprop_stretch["mode2"]
-                                       ["scale"]**2 + dx**2)
-                                   )
+        mode = asym_gaussian(x,
+                             *list(self.distprop_stretch.values()),
+                             dx=dx)
+        return mode
 
-        return (fprompt * mode1_pdf
-                + (1-fprompt) * (self.distprop_stretch["a"]*mode1_pdf
-                                 + (1-self.distprop_stretch["a"])*mode2_pdf))
+        # ----------------------------------------------------------- #
+        #                            COLOR                            #
+        # ----------------------------------------------------------- #
 
-    # - Color
-    def get_distpdf_color(self, x, fprompt, dx=None, **kwargs):
-        """ get the pdf of the color distribution at the given values.
+    def get_distpdf_color(self, c, dc=None, **kwargs):
+        """get the pdf of the color distribution at the given values.
 
         Parameters
         ----------
-        x: [1d array]
+        c: [1d array]
             values where you want to estimate the pdf
 
-        fprompt: [float between 0 and 1]
-            Fraction of prompt. 0(1) means pure delayed(prompt)
-            Could be a list.
-
-        dx: [1d array] -optional-
+        dc: [1d array] -optional-
             measurement error added in quadrature to the model's std.
 
         **kwargs goes to set_distprop_color()
@@ -197,30 +222,29 @@ class PrompDelayModel(object):
         -------
         pdf values (or list of)
         """
+
         self.set_distprop_color(**kwargs)
-        if dx is None:
-            dx = 0
+        if dc is None:
+            dc = 0
 
-        prompt = asym_gaussian(
-            x, *list(self.distprop_color["prompt"].values()), dx=dx)
-        delayed = asym_gaussian(
-            x, *list(self.distprop_color["delayed"].values()), dx=dx)
-        return fprompt*prompt + (1-fprompt) * delayed
+        mode = asym_gaussian(c,
+                             *list(self.distprop_color.values()),
+                             dx=dc)
+        return mode
 
-    # - Mass
-    def get_distpdf_mass(self, x, fprompt, dx=None, z=None, **kwargs):
-        """ get the pdf of the mass distribution at the given values.
+        # ----------------------------------------------------------- #
+        #                          HOST MASS                          #
+        # ----------------------------------------------------------- #
+
+    def get_distpdf_mass(self, M, dM=None, z=None, **kwargs):
+        """get the pdf of the mass distribution at the given values.
 
         Parameters
         ----------
-        x: [1d array]
+        M: [1d array]
             values where you want to estimate the pdf
 
-        fprompt: [float between 0 and 1]
-            Fraction of prompt. 0(1) means pure delayed(prompt)
-            Could be a list.
-
-        dx: [1d array] -optional-
+        dM: [1d array] -optional-
             measurement error added in quadrature to the model's std.
 
         z: [float] -optional-
@@ -233,24 +257,27 @@ class PrompDelayModel(object):
         -------
         pdf values (or list of)
         """
+
         self.set_distprop_mass(**kwargs)
-        if dx is None:
-            dx = 0
+        if dM is None:
+            dM = 0
 
         if z is not None:
             raise NotImplementedError(
                 "No redshift dependency implemented for get_distpdf_mass()." +
                 "Set z=None")
 
-        prompt = asym_gaussian(
-            x, *list(self.distprop_mass["prompt"].values()), dx=dx)
-        delayed = asym_gaussian(
-            x, *list(self.distprop_mass["delayed"].values()), dx=dx)
-        return fprompt*prompt + (1-fprompt) * delayed
+        mode = asym_gaussian(M,
+                             *list(self.distprop_mass.values()),
+                             dx=dM)
+        return mode
 
-    # - HR
+        # ----------------------------------------------------------- #
+        #                       HUBBLE RESIDUAL                       #
+        # ----------------------------------------------------------- #
+
     def get_distpdf_hr(self, x, fprompt, dx=None, **kwargs):
-        """  get the pdf of the standardised Hubble Residual distribution at
+        """ get the pdf of the standardised Hubble Residual distribution at
         the given values.
 
         Parameters
@@ -277,27 +304,49 @@ class PrompDelayModel(object):
 
         prompt = stats.norm.pdf(x,
                                 loc=self.distprop_hr["prompt"]["mean"],
-                                scale=np.sqrt(self.distprop_hr["prompt"]\
+                                scale=np.sqrt(self.distprop_hr["prompt"]
                                               ["sigma"]**2+dx**2))
         delayed = stats.norm.pdf(x,
                                  loc=self.distprop_hr["delayed"]["mean"],
-                                 scale=np.sqrt(self.distprop_hr["delayed"]\
+                                 scale=np.sqrt(self.distprop_hr["delayed"]
                                                ["sigma"]**2+dx**2))
         return fprompt*prompt + (1-fprompt) * delayed
 
-    # ---------- #
-    #  Draw      #
-    # ---------- #
+    # ------------------------------------------------------------------- #
+    #                               PLOTTER                               #
+    # ------------------------------------------------------------------- #
+
+        # ----------------------------------------------------------- #
+        #                            TOOLS                            #
+        # ----------------------------------------------------------- #
+
     def _draw_(self, a, pdf, size=None):
-        """ """
+        """"""
         if len(np.shape(pdf)) == 1:
             return np.random.choice(a, size=size, p=pdf)
         elif len(np.shape(pdf)) == 2:
-            return np.asarray([np.random.choice(mm, size=size, p=pdf_) for pdf_ in pdf])
+            return np.asarray([np.random.choice(mm, size=size, p=pdf)
+                               for pdf_ in pdf])
         raise ValueError("pdf size must be 1 or 2.")
 
+    def _read_fprompt_z_(self, fprompt=None, z=None):
+        """ """
+        if fprompt is None and z is None:
+            raise ValueError("z or fprompt must be given.")
+
+        elif fprompt is None:
+            fprompt = self.get_frac_prompt(z)
+        elif z is not None:
+            raise ValueError("complict: either fprompt or z must be given.")
+
+        return fprompt
+
+        # ----------------------------------------------------------- #
+        #                            DRAWS                            #
+        # ----------------------------------------------------------- #
+
     def draw_property(self, which, nprompt, ndelayed, concat=True):
-        """ get a random realisation of the SN Ia property you want
+        """get a random realisation of the SN Ia property you want
 
         Parameters
         ----------
@@ -318,6 +367,7 @@ class PrompDelayModel(object):
         -------
         list of properties (see concat)
         """
+
         xx_ = self.property_range[which]
         prompt_pdf = getattr(self, f"get_distpdf_{which}")(xx_, 1)
         delayed_pdf = getattr(self, f"get_distpdf_{which}")(xx_, 0)
@@ -326,10 +376,11 @@ class PrompDelayModel(object):
             xx_, prompt_pdf/np.sum(prompt_pdf, axis=0), size=nprompt)
         delayed_prop = self._draw_(
             xx_, delayed_pdf/np.sum(delayed_pdf, axis=0), size=ndelayed)
-        return np.concatenate([prompt_prop, delayed_prop], axis=0) if concat else [prompt_prop, delayed_prop]
+        return(np.concatenate([prompt_prop, delayed_prop], axis=0) if concat
+               else [prompt_prop, delayed_prop])
 
     def draw_sample(self, fprompt=None, z=None, size=None):
-        """ draw a random realisation of a sample.
+        """draw a random realisation of a sample.
         It will be stored as self.sample (pandas.DataFrame)
 
         Parameters
@@ -352,7 +403,6 @@ class PrompDelayModel(object):
         -------
         Void (sets self.sample)
         """
-        import pandas
         fprompt = self._read_fprompt_z_(fprompt=fprompt, z=z)
 
         nprompt = int(size*fprompt)
@@ -364,12 +414,13 @@ class PrompDelayModel(object):
              "stretch": self.draw_property("stretch", nprompt, ndelayed),
              "mass": self.draw_property("mass", nprompt, ndelayed),
              "hr": self.draw_property("hr", nprompt, ndelayed),
-             "prompt": np.concatenate([np.ones(nprompt), np.zeros(ndelayed)], axis=0),
+             "prompt": np.concatenate([np.ones(nprompt), np.zeros(ndelayed)],
+                                      axis=0),
              "redshift": z})
 
     def show_pdf(self, which, fprompt=None, z=None, detailed=False, ax=None,
                  cmap="coolwarm", zmax=2, **kwargs):
-        """ Show the figure of the PDF distribution of the given SN property
+        """Show the figure of the PDF distribution of the given SN property
 
         Parameters
         ----------
@@ -407,7 +458,6 @@ class PrompDelayModel(object):
         -------
         matplotlib Figure
         """
-        import matplotlib.pyplot as mpl
 
         fprompt = self._read_fprompt_z_(fprompt=fprompt, z=z)
 
@@ -440,7 +490,7 @@ class PrompDelayModel(object):
         return fig
 
     def show_scatter(self, xkey, ykey, colorkey="prompt", ax=None, **kwargs):
-        """ Show the scatter plot of the sample parameters
+        """Show the scatter plot of the sample parameters
 
         Parameters
         ----------
@@ -456,7 +506,6 @@ class PrompDelayModel(object):
         -------
         matplotlib Figure
         """
-        import matplotlib.pyplot as mpl
         # - Axes
         if ax is None:
             fig = mpl.figure(figsize=[6, 4])
@@ -471,66 +520,65 @@ class PrompDelayModel(object):
         ax.set_ylabel(ykey, fontsize="large")
         return fig
 
-    # ---------------- #
-    #   Internal       #
-    # ---------------- #
-    def _read_fprompt_z_(self, fprompt=None, z=None):
-        """ """
-        if fprompt is None and z is None:
-            raise ValueError("z or fprompt must be given.")
+    # =================================================================== #
+    #                              Properties                             #
+    # =================================================================== #
 
-        elif fprompt is None:
-            fprompt = self.get_frac_prompt(z)
-        elif z is not None:
-            raise ValueError("complict: either fprompt or z must be given.")
+    @property
+    def surveyname(self):
+        """Dict of the color parameters for the selected survey"""
+        return self._surveyname
 
-        return fprompt
-    # ====================== #
-    #    Properties          #
-    # ====================== #
     @property
     def distprop_stretch(self):
-        """ dict of the stretch distribution parameters """
-        if not hasattr(self, "_distprop_stretch") or self._distprop_stretch is None:
+        """dict of the stretch distribution parameters """
+        if not hasattr(self, "_distprop_stretch")\
+                or self._distprop_stretch is None:
             self.set_distprop_stretch()
         return self._distprop_stretch
 
     @property
     def distprop_color(self):
-        """ dict of the color distribution parameters"""
-        if not hasattr(self, "_distprop_color") or self._distprop_color is None:
+        """dict of the color distribution parameters"""
+        if not hasattr(self, "_distprop_color")\
+                or self._distprop_color is None:
             self.set_distprop_color()
         return self._distprop_color
 
     @property
     def distprop_mass(self):
-        """ dict of the host mass distribution parameters"""
-        if not hasattr(self, "_distprop_mass") or self._distprop_mass is None:
+        """dict of the host mass distribution parameters"""
+        if not hasattr(self, "_distprop_mass")\
+                or self._distprop_mass is None:
             self.set_distprop_mass()
         return self._distprop_mass
 
     @property
     def distprop_hr(self):
-        """ dict of the standardized hubble residuals distribution parameters"""
-        if not hasattr(self, "_distprop_hr") or self._distprop_hr is None:
+        """dict of the standardized hubble residuals distribution parameters"""
+        if not hasattr(self, "_distprop_hr")\
+                or self._distprop_hr is None:
             self.set_distprop_hr()
         return self._distprop_hr
 
     @property
     def sample(self):
-        """ pandas.DataFrame of the randomly draw sample parameters (see self.draw_sample()) """
+        """pandas.DataFrame of the randomly draw sample parameters
+        (see self.draw_sample()) """
         if not self.has_sample():
             raise AttributeError("No sample drawn. See self.draw_sample()")
         return self._sample
 
+    @property
     def has_sample(self):
-        """ Test if you loaded a sample already (True means yes) """
+        """Test if you loaded a sample already (True means yes) """
         return hasattr(self, "_sample") and self._sample is not None
 
     @property
     def property_range(self):
-        """ Extent of the SN properties """
-        if not hasattr(self, "_property_range") or self._property_range is None:
+        """Extent of the SN properties """
+        if not hasattr(self, "_property_range")\
+                or self._property_range is None:
             self._property_range = {"color": np.linspace(-0.4, 0.5, 1000),
                                     "stretch": np.linspace(-5, 5, 1000),
                                     "mass": np.linspace(6, 13, 1000),
