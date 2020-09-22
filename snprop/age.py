@@ -1,7 +1,8 @@
 """ Prompt vs. Delayed model of the SN population """
+import pandas
 import numpy as np
-from scipy import stats
 
+from scipy import stats
 from .tools import asym_gaussian
 
 
@@ -108,8 +109,8 @@ class PrompDelayModel(object):
              {"mu": mu_prompt, "sigma": sigma_prompt},
              "delayed":
              {"a": a,
-              "mu_1": mu_delayed1, "sigma1": sigma_delayed1,
-              "mu_2": mu_delayed2, "sigma2": sigma_delayed2}}
+              "mu_1": mu_delayed1, "sigma_1": sigma_delayed1,
+              "mu_2": mu_delayed2, "sigma_2": sigma_delayed2}}
 
     # HUBBLE RESIDUALS
     def set_distprop_hr(self, mean_prompt=0.075, sigma_prompt=0.1,
@@ -246,28 +247,29 @@ class PrompDelayModel(object):
 
         prompt_pdf = stats.norm.pdf(x,
                                     loc=self.distprop_mass["prompt"]
-                                    ["mu_prompt"],
+                                    ["mu"],
                                     scale=np.sqrt(
                                         self.distprop_mass["prompt"]
-                                        ["sigma_prompt"]**2 + dx**2))
+                                        ["sigma"]**2 + dx**2))
 
         delay_pdf1 = stats.norm.pdf(x,
                                     loc=self.distprop_mass["delayed"]
-                                    ["mu_delayed1"],
+                                    ["mu_1"],
                                     scale=np.sqrt(
                                         self.distprop_mass["delayed"]
-                                        ["sigma_delayed1"]**2 + dx**2))
+                                        ["sigma_1"]**2 + dx**2))
 
         delay_pdf2 = stats.norm.pdf(x,
                                     loc=self.distprop_mass["delayed"]
-                                    ["mu_delayed2"],
+                                    ["mu_2"],
                                     scale=np.sqrt(
                                         self.distprop_mass["delayed"]
-                                        ["sigma_delayed2"]**2 + dx**2))
+                                        ["sigma_2"]**2 + dx**2))
 
         return(fprompt * prompt_pdf +
-               (1-fprompt) * (self.distprop_mass["a"]*delay_pdf1 +
-                              (1-self.distprop_mass["a"])*delay_pdf2))
+               (1-fprompt) * (self.distprop_mass["delayed"]["a"]*delay_pdf1 +
+                              (1-self.distprop_mass["delayed"]["a"]) *
+                              delay_pdf2))
 
     # - HR
     def get_distpdf_hr(self, x, fprompt, dx=None, **kwargs):
@@ -419,16 +421,15 @@ class PrompDelayModel(object):
         >self.sample is in that case a dataframe with the length of 3000
         1000 per redshift)
         """
-        import pandas
         z = np.atleast_1d(z)
         ages = self.draw_age(fprompt=fprompt, z=z, size=size)
         nprompt = np.sum(ages, axis=1)
         ndelayed = size - nprompt
-        data = {k: np.concatenate(self.draw_property(k, nprompt, ndelayed))
+        data = {k: (np.concatenate(self.draw_property(k, nprompt, ndelayed))
                 if len(nprompt) > 1
                 else self.draw_property(k,
                                         nprompt,
-                                        ndelayed)
+                                        ndelayed))
                 for k in ["color", "stretch", "age", "mass", "hr"]}
         data["z"] = np.concatenate((np.ones((len(z), size)).T*z).T)\
             if z is not None else None
@@ -621,7 +622,6 @@ class PrompDelayModel(object):
             raise AttributeError("No sample drawn. See self.draw_sample()")
         return self._sample
 
-    @property
     def has_sample(self):
         """Test if you loaded a sample already (True means yes) """
         return hasattr(self, "_sample") and self._sample is not None
