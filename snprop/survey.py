@@ -1,4 +1,6 @@
-"""Prompt vs. Delayed model of the SN population """
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import pandas
 import numpy as np
 from scipy import stats
@@ -19,21 +21,19 @@ class survey(object):
     #                              Variables                              #
     # =================================================================== #
 
-    surveys = ['SNF', 'SDSS', 'PS1', 'SNLS', 'HST']
+    surveys = ['SNF', 'SDSS', 'PS1', 'SNLS']
 
     # Based on SK16's C11 model for SDSS and SNLS,
     #          SK18's C11 model for PS1,
     #          NR20's     model for SNF and HST
-    all_cparams = {'SNF':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+    all_cparams = {'SNF':  # Computed on a Notebook
+                   {'mu': -0.032, 'sigmadown': 0.045, 'sigmaup': 0.089},
                    'SDSS':  # SK16 table 1 C11
                    {'mu': -0.061, 'sigmadown': 0.023, 'sigmaup': 0.083},
                    'PS1':  # SK18 table 3 C11
                    {'mu': -0.100, 'sigmadown': 0.003, 'sigmaup': 0.134},
                    'SNLS':  # SK16 table 1 C11
-                   {'mu': -0.112, 'sigmadown': 0.003, 'sigmaup': 0.144},
-                   'HST':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1}}
+                   {'mu': -0.112, 'sigmadown': 0.003, 'sigmaup': 0.144}}
 
     all_xparams = {'SNF':  # NR20 table 4
                    {'mu': 0.68, 'sigmadown': 1.34, 'sigmaup': 0.41},
@@ -42,20 +42,16 @@ class survey(object):
                    'PS1':  # SK18 table 3 C11
                    {'mu': 0.384, 'sigmadown': 0.987, 'sigmaup': 0.505},
                    'SNLS':  # SK16 table 1 C11
-                   {'mu': 0.974, 'sigmadown': 1.236, 'sigmaup': 0.283},
-                   'HST':  # NR20 table 4
-                   {'mu': 0.964, 'sigmadown': 1.467, 'sigmaup': 0.235}}
+                   {'mu': 0.974, 'sigmadown': 1.236, 'sigmaup': 0.283}}
 
-    all_mparams = {'SNF':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+    all_mparams = {'SNF':  # From Gaussian fit on the whole dataframe (-HST)
+                   {'mu': 10.12, 'sigma': 0.81},
                    'SDSS':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   {'mu': 10.12, 'sigma': 0.81},
                    'PS1':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
+                   {'mu': 10.12, 'sigma': 0.81},
                    'SNLS':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1},
-                   'HST':
-                   {'mu': 1, 'sigmadown': 1, 'sigmaup': 1}}
+                   {'mu': 10.12, 'sigma': 0.81}}
 
     # =================================================================== #
     #                               Initial                               #
@@ -65,7 +61,7 @@ class survey(object):
         """Sets the class parameters to given arguments"""
         if (surveyname not in self.surveys) and not new:
             raise KeyError(f"Survey must be in {self.surveys}, " +
-                           "{surveyname} given. Set new=True to create one")
+                           f"'{surveyname} given. Set new=True to create one")
         self._surveyname = surveyname
         if not new:
             self._distprop_color = self.all_cparams[surveyname]
@@ -379,6 +375,8 @@ class survey(object):
         return(np.concatenate([prompt_prop, delayed_prop], axis=0) if concat
                else [prompt_prop, delayed_prop])
 
+        # ----------------------------------------------------------- #
+
     def draw_sample(self, fprompt=None, z=None, size=None):
         """draw a random realisation of a sample.
         It will be stored as self.sample (pandas.DataFrame)
@@ -417,6 +415,8 @@ class survey(object):
              "prompt": np.concatenate([np.ones(nprompt), np.zeros(ndelayed)],
                                       axis=0),
              "redshift": z})
+
+        # ----------------------------------------------------------- #
 
     def show_pdf(self, which, fprompt=None, z=None, detailed=False, ax=None,
                  cmap="coolwarm", zmax=2, **kwargs):
@@ -488,6 +488,8 @@ class survey(object):
 
         ax.set_xlabel(which, fontsize="large")
         return fig
+
+        # ----------------------------------------------------------- #
 
     def show_scatter(self, xkey, ykey, colorkey="prompt", ax=None, **kwargs):
         """Show the scatter plot of the sample parameters
