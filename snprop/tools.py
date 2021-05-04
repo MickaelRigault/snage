@@ -1,5 +1,45 @@
-import numpy as np
 from scipy import stats
+
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+# =========================================================================== #
+#                                                                             #
+#                                 PRELIMINARY                                 #
+#                                                                             #
+# =========================================================================== #
+
+# =========================================================================== #
+#                                  Colourmap                                  #
+# =========================================================================== #
+
+# create a colormap that consists of
+# - 1/5 : custom colormap, ranging from white to the 1st color of the colormap
+# - 4/5 : existing colormap
+
+# set upper part: 4 * 256/4 entries
+upper = mpl.cm.turbo(np.arange(256))
+
+# set lower part: 1 * 256/4 entries
+# - initialize all entries to 1
+#   to make sure that the alpha channel (4th column) is 1
+lower = np.ones((int(256/4), 4))
+# - modify the first three columns (RGB):
+#   range linearly between white (1,1,1)
+#   and the first color of the upper colormap
+for i in range(3):
+    lower[:, i] = np.linspace(1, upper[0, i], lower.shape[0])
+
+# combine parts of colormap
+cmap = np.vstack((lower, upper))
+
+# convert to matplotlib colormap
+cmap_tpw = mpl.colors.ListedColormap(cmap, name='turbopw', N=cmap.shape[0])
+
+# =========================================================================== #
+#                                  Asymgauss                                  #
+# =========================================================================== #
 
 
 def asym_gaussian(x, mu, sigmaup, sigmadown, dx=None):
@@ -17,8 +57,22 @@ def asym_gaussian(x, mu, sigmaup, sigmadown, dx=None):
     return pdf/norm
 
 
+# =========================================================================== #
+#                                                                             #
+#                                   CLASSES                                   #
+#                                                                             #
+# =========================================================================== #
+
+# =========================================================================== #
+#                                  Asymgauss                                  #
+# =========================================================================== #
+
 class AsymGaussian(object):
     """ """
+
+    # =================================================================== #
+    #                               Initial                               #
+    # =================================================================== #
 
     @classmethod
     def from_data(cls, data, error=None, weights=None):
@@ -28,9 +82,22 @@ class AsymGaussian(object):
         print(fitout)
         return this
 
-    # ======= #
-    # Methods #
-    # ======= #
+    # =================================================================== #
+    #                               Methods                               #
+    # =================================================================== #
+
+    # ------------------------------------------------------------------- #
+    #                               SETTER                                #
+    # ------------------------------------------------------------------- #
+
+    def set_param(self, mu, sigmaup, sigmadown):
+        """ """
+        self._param = {"mu": mu, "sigmaup": sigmaup, "sigmadown": sigmadown}
+
+    # ------------------------------------------------------------------- #
+    #                               FITTER                                #
+    # ------------------------------------------------------------------- #
+
     def pdf(self, x, dx=None, param=None):
         """ """
         if param is not None:
@@ -52,17 +119,16 @@ class AsymGaussian(object):
 
         return optimize.fmin(get_loglikelihood, guess)
 
-    def set_param(self, mu, sigmaup, sigmadown):
-        """ """
-        self._param = {"mu": mu, "sigmaup": sigmaup, "sigmadown": sigmadown}
+    # ------------------------------------------------------------------- #
+    #                               PLOTTER                               #
+    # ------------------------------------------------------------------- #
 
     def show(self, ax=None, data=None, error=None,
              show_legend=True,
              dataprop={}, **kwargs):
         """ """
-        import matplotlib.pyplot as mpl
         if ax is None:
-            fig = mpl.figure(figsize=[6, 4])
+            fig = plt.figure(figsize=[6, 4])
             ax = fig.add_subplot(111)
         else:
             fig = ax.figure
@@ -82,9 +148,10 @@ class AsymGaussian(object):
         if show_legend:
             ax.legend(loc="best", frameon=False)
         return fig
-    # =========== #
-    #  Properties #
-    # =========== #
+
+    # =================================================================== #
+    #                              Properties                             #
+    # =================================================================== #
 
     @property
     def param(self):
@@ -107,3 +174,358 @@ class AsymGaussian(object):
     def sigmadown(self):
         """ """
         return self.param["sigmadown"]
+
+
+# =========================================================================== #
+#                                   Checker                                   #
+# =========================================================================== #
+
+class Checker(object):
+    '''Checks a SNANA simulation in various ways'''
+
+    # =================================================================== #
+    #                              Variables                              #
+    # =================================================================== #
+
+    fits = dict()
+    kernels = dict()
+    kernels_show = dict()
+    find_id = {'SDSS': 1,
+               'PS1': 15,
+               'SNLS': 4}
+    find_name = {'mass':     ['HOST_LOGMASS', 'hostmass',
+                              'HOST_LOGMASS_ERR', 'hostmass_err'],
+                 'stretch':  ['x1', 'stretchs',
+                              'x1ERR', 'stretchs_err'],
+                 'redshift': ['zCMB', 'redshifts',
+                              'zCMBERR', 0],
+                 'color':    ['c', 'colors',
+                              'cERR', 'colors_err']}
+
+    # =================================================================== #
+    #                               Initial                               #
+    # =================================================================== #
+
+    def __init__(self, sims_data, act_data, name):
+        '''Save data'''
+        self.sims_data = sims_data
+        self.sims_data_mass7 = sims_data[sims_data['HOST_LOGMASS'] > 7]
+        self.act_data = act_data
+        self.act_data_mass7 = act_data[act_data['hostmass'] > 7]
+        self.name = name
+
+    # =================================================================== #
+    #                               Methods                               #
+    # =================================================================== #
+
+    # ------------------------------------------------------------------- #
+    #                               Kernels                               #
+    # ------------------------------------------------------------------- #
+
+    def set_kernel(self, abs_name, ord_name, save=False):
+        '''Creates a Gaussian KDE kernel from the sims.
+        Parameters
+        ----------
+        axes: list of strings
+            names of the `sims_data` columns on which computing the kernel
+        save: optional, string
+            name of the kernel to save in the `self.kernels` dictionary
+
+        Returns
+        ----------
+        kernel'''
+        if (abs_name == 'mass') or (ord_name == 'mass'):
+            sims_used = self.sims_data_mass7
+        else:
+            sims_used = self.sims_data
+        abs_sims = self.find_name[abs_name][0]
+        ord_sims = self.find_name[ord_name][0]
+
+        m1 = sims_used[abs_sims]
+        m2 = sims_used[ord_sims]
+        values = np.vstack([m1, m2])
+
+        kernel = stats.gaussian_kde(values)
+
+        if save is False:
+            return kernel
+        else:
+            kernel_name = abs_name + '_' + ord_name
+            xmin = m1.min()
+            xmax = m1.max()
+            ymin = m2.min()
+            ymax = m2.max()
+
+            X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+            positions = np.vstack([X.ravel(), Y.ravel()])
+            Z = np.reshape(kernel(positions), X.shape)
+
+            self.kernels[kernel_name] = kernel
+            self.kernels_show[kernel_name] = Z
+
+    def fit(self, kernel_name):
+        '''Gives the value of how data corresponds
+        to interpolated simulations'''
+        abs_name, ord_name = kernel_name.split('_')
+        if (abs_name == 'mass') or (ord_name == 'mass'):
+            data_used = self.act_data_mass7
+        else:
+            data_used = self.act_data
+        abs_data = self.find_name[abs_name][1]
+        ord_data = self.find_name[ord_name][1]
+        d1 = data_used[abs_data]
+        d2 = data_used[ord_data]
+        data = np.vstack([d1, d2])
+        self.fits[kernel_name] = np.sum(self.kernels[kernel_name](data))
+        return self.fits[kernel_name]
+
+    # ------------------------------------------------------------------- #
+    #                               PLOTTER                               #
+    # ------------------------------------------------------------------- #
+
+        # ----------------------------------------------------------- #
+        #                           Kernels                           #
+        # ----------------------------------------------------------- #
+
+    def show_kernel(self,
+                    kernel_name=None,
+                    kernel=None, abs_name=None, ord_name=None,
+                    ax=None, show_cb=True, cax=None,
+                    aspect=1, alpha_kernel=1,
+                    ticksize='x-large', fsize='x-large'):
+        '''Represents the interpolated kernel as an imshow'''
+        if ax is None:
+            fig = plt.figure(figsize=[7, 5])
+            ax = fig.add_axes([0.1, 0.12, 0.8, 0.8])
+
+        if (kernel_name is None) and (kernel is None):
+            raise NameError('Either `kernel_name` or `kernel` must be given')
+        if (kernel_name is not None) and (kernel is not None):
+            raise NameError("`kernel_name` and `kernel` can't both be given")
+        if (kernel_name is not None) and (kernel is None):
+            xmin = self.kernels[kernel_name].dataset[0].min()
+            xmax = self.kernels[kernel_name].dataset[0].max()
+            ymin = self.kernels[kernel_name].dataset[1].min()
+            ymax = self.kernels[kernel_name].dataset[1].max()
+            Z = self.kernels_show[kernel_name]
+            abs_name, ord_name = kernel_name.split('_')
+        if (kernel_name is None) and (kernel is not None):
+            xmin = kernel.dataset[0].min()
+            xmax = kernel.dataset[0].max()
+            ymin = kernel.dataset[1].min()
+            ymax = kernel.dataset[1].max()
+
+            X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+            positions = np.vstack([X.ravel(), Y.ravel()])
+            Z = np.reshape(kernel(positions), X.shape)
+
+        ims = ax.imshow(np.rot90(Z), cmap=cmap_tpw,
+                        extent=[xmin, xmax, ymin, ymax],
+                        aspect=aspect, alpha=alpha_kernel)
+
+        if show_cb is True:
+            if cax is None:
+                cb = ax.figure.colorbar(ims, ax=ax)
+            else:
+                cb = ax.figure.colorbar(ims, cax=cax)
+            cb.ax.tick_params(labelsize=ticksize)
+        else:
+            pass
+
+        ax.tick_params(labelsize=ticksize)
+        cb.ax.tick_params(labelsize=ticksize)
+        ax.set_xlabel(fr'$\mathrm{ {abs_name} }$', fontsize=fsize)
+        ax.set_ylabel(fr'$\mathrm{ {ord_name} }$', fontsize=fsize)
+
+        return ax
+
+        # ----------------------------------------------------------- #
+        #                           Histoer                           #
+        # ----------------------------------------------------------- #
+
+    def show_hist(self,
+                  abs_name, survey='all',
+                  ax=None,
+                  alpha=.5, nbbins=15,
+                  ht_sims='stepfilled', lbl_sims='Sims',
+                  ec_sims=None, fc_sims=cmap_tpw(0.35),
+                  ht_data='step', lbl_data='Data',
+                  lw=2, fc_data='C0',
+                  ticksize='x-large', fsize='x-large',
+                  show_leg=False):
+        '''Simple histogram plotting'''
+        if ax is None:
+            fig = plt.figure(figsize=[7, 5])
+            ax = fig.add_axes([0.1, 0.12, 0.8, 0.8])
+
+        if abs_name == 'mass':
+            sims_data = self.sims_data_mass7
+            act_data = self.act_data_mass7
+        else:
+            sims_data = self.sims_data
+            act_data = self.act_data
+
+        if survey != 'all':
+            sims_data = sims_data[sims_data['IDSURVEY'].isin(survey)]
+            act_data = act_data[act_data['IDSURVEY'].isin(survey)]
+
+        prophist = dict(alpha=alpha, density=True)
+
+        abs_sims, abs_data = self.find_name[abs_name][0:2]
+
+        _, binsv, _ = ax.hist(sims_data[abs_sims],
+                              histtype=ht_sims,
+                              bins=nbbins,
+                              facecolor=fc_sims,
+                              edgecolor=ec_sims,
+                              label=lbl_sims,
+                              **prophist)
+
+        ax.hist(act_data[abs_data],
+                bins=binsv,
+                histtype=ht_data, lw=lw,
+                color=fc_data,
+                label=lbl_data,
+                **prophist)
+
+        ax.tick_params(labelsize=ticksize)
+        ax.set_xlabel(fr'$\mathrm{ {abs_name} }$', fontsize=fsize)
+
+        if show_leg is True:
+            ax.legend(ncol=1, loc='upper left')
+        else:
+            pass
+
+        return ax
+
+        # ----------------------------------------------------------- #
+        #                           Scatter                           #
+        # ----------------------------------------------------------- #
+
+    def show_scatter(self,
+                     abs_name, ord_name, survey='all',
+                     ax=None, show_cb=True, cax=None,
+                     alpha_sims=.5, gsize=30, cmap=cmap_tpw,
+                     xsimscale='linear', ysimscale='linear',
+                     lbl_sims='Sims',
+                     mk_data='o', s_data=50, lbl_data='Data',
+                     lw=1, alpha_data=.7, fc_data='C0',
+                     ticksize='x-large', fsize='x-large'):
+        '''Scatter of sims and data'''
+        if ax is None:
+            fig = plt.figure(figsize=[8, 7])
+            ax = fig.add_axes([0.1, 0.12, 0.8, 0.8])
+
+        prop_hex = dict(alpha=alpha_sims, gridsize=gsize, cmap=cmap)
+
+        if (abs_name == 'mass') or (ord_name == 'mass'):
+            sims_data = self.sims_data_mass7
+            act_data = self.act_data_mass7
+        else:
+            sims_data = self.sims_data
+            act_data = self.act_data
+
+        if survey != 'all':
+            sims_data = sims_data[sims_data['IDSURVEY'].isin(survey)]
+            act_data = act_data[act_data['IDSURVEY'].isin(survey)]
+
+        abs_sims, abs_data = self.find_name[abs_name][0:2]
+        ord_sims, ord_data = self.find_name[ord_name][0:2]
+
+        hb = ax.hexbin(sims_data[abs_sims],
+                       sims_data[ord_sims],
+                       xscale=xsimscale, yscale=ysimscale,
+                       **prop_hex)
+
+        prop = dict(marker=mk_data, s=s_data,
+                    lw=lw, alpha=alpha_data, color=fc_data)
+
+        ax.scatter(act_data[abs_data],
+                   act_data[ord_data],
+                   label=lbl_data, **prop)
+
+        if show_cb is True:
+            if cax is None:
+                cb = ax.figure.colorbar(hb, ax=ax)
+            else:
+                cb = ax.figure.colorbar(hb, cax=cax)
+            cb.ax.tick_params(labelsize=ticksize)
+        else:
+            pass
+
+        ax.tick_params(labelsize=ticksize)
+        ax.set_xlabel(fr'$\mathrm{ {abs_name} }$', fontsize=fsize)
+        ax.set_ylabel(fr'$\mathrm{ {ord_name} }$', fontsize=fsize)
+
+        return ax
+
+        # ----------------------------------------------------------- #
+        #                           Complet                           #
+        # ----------------------------------------------------------- #
+
+    def show_all(self, survey='all'):
+        '''5 plots with hists and scatters'''
+        fig = plt.figure(figsize=[20, 15])
+
+        width_plot_cb = 0.35
+        space_cb = 0.025
+        width_cb = 0.0125
+        xmin_bottom = 0.075
+        ymin_bottom = 0.05
+        height_plot_cb = 0.40
+
+        xmin_top = 0.02
+        ymin_top = 0.15 + height_plot_cb
+        width_plot = 0.30
+        space_plot = 0.03
+        height_plot = 0.30
+
+        ax4 = fig.add_axes([xmin_top, ymin_top,
+                            width_plot, height_plot])
+
+        ax1 = fig.add_axes([ax4.get_position().get_points()[1][0]
+                            + space_plot, ymin_top,
+                            width_plot, height_plot])
+
+        ax5 = fig.add_axes([ax1.get_position().get_points()[1][0]
+                            + space_plot, ymin_top,
+                            width_plot, height_plot])
+
+        ax2 = fig.add_axes([xmin_bottom, ymin_bottom,
+                            width_plot_cb, height_plot_cb])
+        axb = fig.add_axes([ax2.get_position().get_points()[1][0]
+                            + space_cb, ymin_bottom,
+                            width_cb, height_plot_cb])
+
+        ax3 = fig.add_axes([axb.get_position().get_points()[1][0]
+                            + 3*space_cb, ymin_bottom,
+                            width_plot_cb, height_plot_cb])
+        axc = fig.add_axes([ax3.get_position().get_points()[1][0]
+                            + space_cb, ymin_bottom,
+                            width_cb, height_plot_cb])
+
+        self.show_hist(abs_name='redshift', survey=survey,
+                       ax=ax1, ticksize=20, fsize=20)
+
+        self.show_hist(abs_name='stretch', survey=survey,
+                       ax=ax4, ticksize=20, fsize=20)
+
+        self.show_hist(abs_name='color', survey=survey,
+                       ax=ax5, ticksize=20, fsize=20)
+
+        self.show_scatter(abs_name='redshift', ord_name='stretch',
+                          survey=survey,
+                          ax=ax2, cax=axb,
+                          xsimscale='log',
+                          ticksize=20, fsize=20)
+
+        self.show_scatter(abs_name='mass', ord_name='stretch',
+                          survey=survey,
+                          ax=ax3, cax=axc,
+                          ticksize=20, fsize=20)
+
+        ax1.legend(fontsize=20, ncol=2,
+                   loc='upper center',
+                   bbox_to_anchor=(0.5, 1.0, 0.0, 0.25))
+
+        fig.suptitle(self.name, fontsize=20)
