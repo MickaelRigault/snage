@@ -181,18 +181,41 @@ class AsymGaussian(object):
 # =========================================================================== #
 
 class Checker(object):
-    '''Checks a SNANA simulation in various ways'''
+    '''Checks a SNANA simulation in various ways.
+    Usage
+    -----
+    checkit = tools.Checker(SNANA_sims,
+                            pantheon_data,
+                            simulation_name)
+    # To create the kernel from the simulation:
+        checkit.set_kernel('mass', 'stretch', save=True)
+        checkit.fit('mass_stretch')
+    # To compute the fit of another kernel on the data:
+        checkit.fit(kernel, abs_name, ord_name)
+
+    # Optional:
+    # If saved kernel from `checkit.set_kernel`:
+        ax = checkit.show_kernel('mass_stretch', aspect=.5)
+    # To give another kernel:
+        ax = checkit.show_kernel(kernel, abs_name, ord_name, aspect=.5)
+    checkit.show_scatter('mass', 'stretch', ax=ax, **kwargs)'''
 
     # =================================================================== #
     #                              Variables                              #
     # =================================================================== #
 
+    # Dictionary of saved kernel fits
     fits = dict()
+    # Dictionary of saved kernels
     kernels = dict()
+    # Dictionary of saved imshow of kernel
     kernels_show = dict()
+    # Gives "IDSURVEY" corresponding to Pantheon name
     find_id = {'SDSS': 1,
                'PS1': 15,
                'SNLS': 4}
+    # Gives column name of both the SNANA simulation and Pantheon dataframes
+    # and errors depending on which astrophysical parameter is asked
     find_name = {'mass':     ['HOST_LOGMASS', 'hostmass',
                               'HOST_LOGMASS_ERR', 'hostmass_err'],
                  'stretch':  ['x1', 'stretchs',
@@ -209,9 +232,7 @@ class Checker(object):
     def __init__(self, sims_data, act_data, name):
         '''Save data'''
         self.sims_data = sims_data
-        self.sims_data_mass7 = sims_data[sims_data['HOST_LOGMASS'] > 7]
         self.act_data = act_data
-        self.act_data_mass7 = act_data[act_data['hostmass'] > 7]
         self.name = name
 
     # =================================================================== #
@@ -226,25 +247,29 @@ class Checker(object):
         '''Creates a Gaussian KDE kernel from the sims.
         Parameters
         ----------
-        axes: list of strings
-            names of the `sims_data` columns on which computing the kernel
-        save: optional, string
-            name of the kernel to save in the `self.kernels` dictionary
+        abs_name, ord_name: strings
+            names of the `sims_data` columns on which computing the kernel. See
+            self.find_name.keys() for accepted terms.
+        save: optional, bool
+            bool to save the kernel and its imshow in the `self.kernels`
+            and `self.kernels_show` dictionaries respectively, with key
+            `abs_name + '_' + ord_name`.
 
         Returns
         ----------
-        kernel'''
+        kernel: scipy.stats.kde.gaussian_kde
+            the Gaussian KDE of the simulated SNANA on the specified axes'''
         if (abs_name == 'mass') or (ord_name == 'mass'):
-            sims_used = self.sims_data_mass7
+            sims_data = self.sims_data[
+                self.sims_data[self.find_name['mass'][0]] > 7]
         else:
-            sims_used = self.sims_data
+            sims_data = self.sims_data
+
         abs_sims = self.find_name[abs_name][0]
         ord_sims = self.find_name[ord_name][0]
-
-        m1 = sims_used[abs_sims]
-        m2 = sims_used[ord_sims]
+        m1 = sims_data[abs_sims]
+        m2 = sims_data[ord_sims]
         values = np.vstack([m1, m2])
-
         kernel = stats.gaussian_kde(values)
 
         if save is False:
@@ -263,21 +288,53 @@ class Checker(object):
             self.kernels[kernel_name] = kernel
             self.kernels_show[kernel_name] = Z
 
-    def fit(self, kernel_name):
-        '''Gives the value of how data corresponds
-        to interpolated simulations'''
-        abs_name, ord_name = kernel_name.split('_')
+            return kernel
+
+    def fit(self,
+            kernel_name=None,
+            kernel=None, abs_name=None, ord_name=None):
+        '''Gives the value of how data corresponds to interpolated simulations
+        Parameters
+        ----------
+        kernel_name: string
+            name of the saved kernel in `self.kernels`
+        kernel: gaussian_kde
+            given Gaussian KDE on which to compute the sum of probabilities.
+            Either a kernel_name or a kernel + absciss and ordinate can be
+            input
+        abs_name, ord_name: strings
+            name of the `act_data` columns on which applying the kernel. See
+            self.find_name.keys() for accepted terms.
+
+        Returns
+        -------
+        `self.fits[kernel_name]` or `np.sum(kernel(data))`: float
+            the sum of the probabilities of all datapoints using previously
+            saved or given kernel.'''
+        if (kernel_name is None) and (kernel is None):
+            raise NameError('Either `kernel_name` or `kernel` must be given')
+        if (kernel_name is not None) and (kernel is not None):
+            raise NameError("`kernel_name` and `kernel` can't both be given")
+        if (kernel_name is not None) and (kernel is None):
+            abs_name, ord_name = kernel_name.split('_')
+        if (kernel_name is None) and (kernel is not None):
+            pass
+
         if (abs_name == 'mass') or (ord_name == 'mass'):
-            data_used = self.act_data_mass7
+            act_data = self.act_data[
+                self.act_data[self.find_name['mass'][1]] > 7]
         else:
-            data_used = self.act_data
-        abs_data = self.find_name[abs_name][1]
-        ord_data = self.find_name[ord_name][1]
-        d1 = data_used[abs_data]
-        d2 = data_used[ord_data]
+            act_data = self.act_data
+        abs_act = self.find_name[abs_name][1]
+        ord_act = self.find_name[ord_name][1]
+        d1 = act_data[abs_act]
+        d2 = act_data[ord_act]
         data = np.vstack([d1, d2])
-        self.fits[kernel_name] = np.sum(self.kernels[kernel_name](data))
-        return self.fits[kernel_name]
+        if (kernel_name is not None) and (kernel is None):
+            self.fits[kernel_name] = np.sum(self.kernels[kernel_name](data))
+            return self.fits[kernel_name]
+        if (kernel_name is None) and (kernel is not None):
+            return np.sum(kernel(data))
 
     # ------------------------------------------------------------------- #
     #                               PLOTTER                               #
@@ -333,9 +390,8 @@ class Checker(object):
             pass
 
         ax.tick_params(labelsize=ticksize)
-        cb.ax.tick_params(labelsize=ticksize)
-        ax.set_xlabel(fr'$\mathrm{ {abs_name} }$', fontsize=fsize)
-        ax.set_ylabel(fr'$\mathrm{ {ord_name} }$', fontsize=fsize)
+        ax.set_xlabel(f'{abs_name}', fontsize=fsize)
+        ax.set_ylabel(f'{ord_name}', fontsize=fsize)
 
         return ax
 
@@ -359,19 +415,22 @@ class Checker(object):
             ax = fig.add_axes([0.1, 0.12, 0.8, 0.8])
 
         if abs_name == 'mass':
-            sims_data = self.sims_data_mass7
-            act_data = self.act_data_mass7
+            sims_data = self.sims_data[
+                self.sims_data[self.find_name['mass'][0]] > 7]
+            act_data = self.act_data[
+                self.act_data[self.find_name['mass'][1]] > 7]
         else:
             sims_data = self.sims_data
             act_data = self.act_data
 
         if survey != 'all':
-            sims_data = sims_data[sims_data['IDSURVEY'].isin(survey)]
-            act_data = act_data[act_data['IDSURVEY'].isin(survey)]
+            sims_data = sims_data[sims_data['IDSURVEY'].isin([
+                self.find_id.get(key) for key in survey])]
+            act_data = act_data[act_data['survey'].isin(survey)]
 
         prophist = dict(alpha=alpha, density=True)
 
-        abs_sims, abs_data = self.find_name[abs_name][0:2]
+        abs_sims, abs_act = self.find_name[abs_name][0:2]
 
         _, binsv, _ = ax.hist(sims_data[abs_sims],
                               histtype=ht_sims,
@@ -381,7 +440,7 @@ class Checker(object):
                               label=lbl_sims,
                               **prophist)
 
-        ax.hist(act_data[abs_data],
+        ax.hist(act_data[abs_act],
                 bins=binsv,
                 histtype=ht_data, lw=lw,
                 color=fc_data,
@@ -389,7 +448,7 @@ class Checker(object):
                 **prophist)
 
         ax.tick_params(labelsize=ticksize)
-        ax.set_xlabel(fr'$\mathrm{ {abs_name} }$', fontsize=fsize)
+        ax.set_xlabel(f'{abs_name}', fontsize=fsize)
 
         if show_leg is True:
             ax.legend(ncol=1, loc='upper left')
@@ -419,18 +478,21 @@ class Checker(object):
         prop_hex = dict(alpha=alpha_sims, gridsize=gsize, cmap=cmap)
 
         if (abs_name == 'mass') or (ord_name == 'mass'):
-            sims_data = self.sims_data_mass7
-            act_data = self.act_data_mass7
+            sims_data = self.sims_data[
+                self.sims_data[self.find_name['mass'][0]] > 7]
+            act_data = self.act_data[
+                self.act_data[self.find_name['mass'][1]] > 7]
         else:
             sims_data = self.sims_data
             act_data = self.act_data
 
         if survey != 'all':
-            sims_data = sims_data[sims_data['IDSURVEY'].isin(survey)]
-            act_data = act_data[act_data['IDSURVEY'].isin(survey)]
+            sims_data = sims_data[sims_data['IDSURVEY'].isin([
+                self.find_id.get(key) for key in survey])]
+            act_data = act_data[act_data['survey'].isin(survey)]
 
-        abs_sims, abs_data = self.find_name[abs_name][0:2]
-        ord_sims, ord_data = self.find_name[ord_name][0:2]
+        abs_sims, abs_act = self.find_name[abs_name][0:2]
+        ord_sims, ord_act = self.find_name[ord_name][0:2]
 
         hb = ax.hexbin(sims_data[abs_sims],
                        sims_data[ord_sims],
@@ -440,8 +502,8 @@ class Checker(object):
         prop = dict(marker=mk_data, s=s_data,
                     lw=lw, alpha=alpha_data, color=fc_data)
 
-        ax.scatter(act_data[abs_data],
-                   act_data[ord_data],
+        ax.scatter(act_data[abs_act],
+                   act_data[ord_act],
                    label=lbl_data, **prop)
 
         if show_cb is True:
@@ -454,8 +516,8 @@ class Checker(object):
             pass
 
         ax.tick_params(labelsize=ticksize)
-        ax.set_xlabel(fr'$\mathrm{ {abs_name} }$', fontsize=fsize)
-        ax.set_ylabel(fr'$\mathrm{ {ord_name} }$', fontsize=fsize)
+        ax.set_xlabel(f'{abs_name}', fontsize=fsize)
+        ax.set_ylabel(f'{ord_name}', fontsize=fsize)
 
         return ax
 
@@ -463,7 +525,9 @@ class Checker(object):
         #                           Complet                           #
         # ----------------------------------------------------------- #
 
-    def show_all(self, survey='all'):
+    def show_all(self,
+                 survey='all',
+                 nbbins=8, fc_sims=cmap_tpw(0.35), fc_data='C0'):
         '''5 plots with hists and scatters'''
         fig = plt.figure(figsize=[20, 15])
 
@@ -504,23 +568,31 @@ class Checker(object):
                             + space_cb, ymin_bottom,
                             width_cb, height_plot_cb])
 
-        self.show_hist(abs_name='redshift', survey=survey,
+        self.show_hist(abs_name='redshift',
+                       survey=survey, lbl_data=str(survey),
+                       nbbins=nbbins, fc_sims=fc_sims, fc_data=fc_data,
                        ax=ax1, ticksize=20, fsize=20)
 
-        self.show_hist(abs_name='stretch', survey=survey,
+        self.show_hist(abs_name='stretch',
+                       survey=survey,
+                       nbbins=nbbins, fc_sims=fc_sims, fc_data=fc_data,
                        ax=ax4, ticksize=20, fsize=20)
 
-        self.show_hist(abs_name='color', survey=survey,
+        self.show_hist(abs_name='color',
+                       survey=survey,
+                       nbbins=nbbins, fc_sims=fc_sims, fc_data=fc_data,
                        ax=ax5, ticksize=20, fsize=20)
 
         self.show_scatter(abs_name='redshift', ord_name='stretch',
                           survey=survey,
+                          fc_data=fc_data,
                           ax=ax2, cax=axb,
                           xsimscale='log',
                           ticksize=20, fsize=20)
 
         self.show_scatter(abs_name='mass', ord_name='stretch',
                           survey=survey,
+                          fc_data=fc_data,
                           ax=ax3, cax=axc,
                           ticksize=20, fsize=20)
 
@@ -529,3 +601,5 @@ class Checker(object):
                    bbox_to_anchor=(0.5, 1.0, 0.0, 0.25))
 
         fig.suptitle(self.name, fontsize=20)
+
+        return fig
