@@ -1,6 +1,8 @@
 from scipy import stats
 
+import glob
 import numpy as np
+import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
@@ -184,9 +186,13 @@ class Checker(object):
     '''Checks a SNANA simulation in various ways.
     Usage
     -----
-    checkit = tools.Checker(SNANA_sims,
+    from snprop import tools
+    checkit = tools.Checker(SNANA_folder,
+                            pantheon_data)
+    # If more than one FITOPT or MUOPT (i.e. FITOPT001 instead of 000):
+    checkit = tools.Checker(SNANA_folder,
                             pantheon_data,
-                            simulation_name)
+                            ['001', '000'])
     # To create the kernel from the simulation:
         checkit.set_kernel('mass', 'stretch', save=True)
         checkit.fit('mass_stretch')
@@ -211,9 +217,10 @@ class Checker(object):
     # Dictionary of saved imshow of kernel
     kernels_show = dict()
     # Gives "IDSURVEY" corresponding to Pantheon name
-    find_id = {'SDSS': 1,
-               'PS1': 15,
-               'SNLS': 4}
+    find_id = {'low-z': [5, 64, 65, 66],
+               'SDSS':  [1],
+               'PS1':   [15],
+               'SNLS':  [4]}
     # Gives column name of both the SNANA simulation and Pantheon dataframes
     # and errors depending on which astrophysical parameter is asked
     find_name = {'mass':     ['HOST_LOGMASS', 'hostmass',
@@ -226,14 +233,151 @@ class Checker(object):
                               'cERR', 'colors_err']}
 
     # =================================================================== #
+    #                               Extfunc                               #
+    # =================================================================== #
+
+    @staticmethod
+    def get_numbers(folder):
+        '''Returns the possible FITOPT and MUOPT numbers from a SNANA output
+        folder.
+        Parameter
+        ---------
+        folder: string
+            The path to the wanted SNANA output folder where files of the type
+            FITOPT###_MUOPT### exist with different numbers.
+
+        Returns
+        -------
+        Array of the combinations of number that exist in the folder.
+        '''
+        folnums = []
+        for file in glob.glob(folder + '/FITOPT*'):
+            folnums.append([file.split('/')[-1].split('_')[0][-3:],
+                            file.split('/')[-1].split('.')[-2][-3:]])
+        return np.unique(folnums)
+
+    @staticmethod
+    def read(filename):
+        '''Read relevant data depending on the extension of said file.
+        Parameter
+        ---------
+        filename: string
+            The name of the SNANA output file that one wants to have as a
+            usable pandad DataFrame: can be a `wfit[...].YAML` file, a
+            `FITOPT###_MUOPT###.FITRES` or `FITOPT###_MUOPT###.M0DIF` file.
+
+        Returns
+        -------
+        A DataFrame containing the asked file's data in a readable way.
+        '''
+        # Get the filetype
+        ftype = filename.split('.')[-1].lower()
+        # If it's a `wfit[...].YAML` file, we want a DataFrame whose columns
+        # are the parameters and the one line is the values; that way it'll be
+        # concatenable with other results
+        if ftype == 'yaml':
+            return pd.read_csv(filename,
+                               sep=':\\s+', engine='python',
+                               header=None, index_col=0).transpose()
+        # Otherwise, we want to get rid of the commented lines, get the column
+        # names that are after `VARNAMES`, and each line is either a `SN:` or
+        # `ROW` line.
+        else:
+            todel = {'fitres': 'SN', 'm0dif': 'ROW'}
+            with open(filename) as f:
+                for i, line in enumerate(f):
+                    if line.startswith('VARNAMES:'):
+                        line = line.replace(',', ' ')
+                        line = line.replace('\n', '')
+                        names = line.split()
+                    elif line.startswith(todel[ftype]):
+                        startrows = i
+                        break
+            pandas = pd.read_csv(filename, header=None,
+                                 names=names, skiprows=startrows,
+                                 delim_whitespace=True, comment='#')
+            return pandas.drop('VARNAMES:', axis=1)
+
+    @staticmethod
+    def sample_sims(fitres, data):
+        '''Draws simulated data from the fitres to mimic the density of actual
+        data.
+        Parameters
+        ----------
+        fitres, data: pandas DataFrame
+            SNANA FITRES file passed through `Checker.read(filename)` function;
+            Currently Pantheon dataset from the `variaIa.stretchevol.tools`.
+
+        Returns
+        -------
+        Returns a modified DataFrame of the fitres whose survey ratio mimics
+        that of the data.'''
+        # Gives "IDSURVEY" corresponding to Pantheon name
+        find_id = {'low-z': [5, 64, 65, 66],
+                   'SDSS':  [1],
+                   'PS1':   [15],
+                   'SNLS':  [4]}
+        # Extract the surveys' names from the data
+        surveys = np.unique(data['survey'])
+        # Take the corresponding ids using previous `find_id` dict
+        ids = [find_id[survey] for survey in surveys]
+        # Compute the size of each survey in the data
+        surveys_size = {survey:
+                        len(data[data['survey'] == survey])
+                        for survey in surveys}
+        # And the same for the fitres
+        fitres_size = {survey:
+                       len(fitres[fitres['IDSURVEY'].isin(idsurvey)])
+                       for survey, idsurvey in zip(surveys, ids)}
+        # Get which survey has the lowest size in the data
+        lowest = min(surveys_size, key=surveys_size.get)
+        # Make the list of all others surveys to loop on them
+        survothers = [survey for survey in surveys if survey is not lowest]
+        # To compute how many SNe have to be drawn from the sims overall, the
+        # best is to take the lowest value of the lowest survey from the sims
+        # that will allow the ratio of the others wrt to the lowest to exist
+        # (i.e. the numbers for the non-lowest can't be higher than their
+        # current value)
+        todraw = {lowest: int(np.min([fitres_size[other]*surveys_size[lowest]
+                                      / surveys_size[other]
+                                      for other in survothers]))}
+        # Loop on the others
+        for other in survothers:
+            todraw[other] = int(todraw[lowest]*surveys_size[other]
+                                / surveys_size[lowest])
+        # Use `sample` to draw from each survey in the sims
+        fitres_sub = [fitres[fitres['IDSURVEY'].isin(
+            idsurvey)].sample(todraw[survey])
+            for survey, idsurvey in zip(surveys, ids)]
+        # Concatenate
+        return pd.concat(fitres_sub)
+
+    # =================================================================== #
     #                               Initial                               #
     # =================================================================== #
 
-    def __init__(self, sims_data, act_data, name):
-        '''Save data'''
-        self.sims_data = sims_data
+    def __init__(self, sims_folder, act_data,
+                 folnum=['000', '000'],
+                 sample_sims=True, name=None):
+        '''Loads all the relevant information from a SNANA BIASCOR folder'''
+        fitnum, munum = folnum
+        if name is None:
+            self.name = sims_folder.split('/')[-1]
+        else:
+            self.name = name
+        self.sims_data = self.read(sims_folder +
+                                   '/FITOPT' + fitnum + '_' +
+                                   'MUOPT' + munum + '.FITRES')
+        self.modif = self.read(sims_folder +
+                               '/FITOPT' + fitnum + '_' +
+                               'MUOPT' + munum + '.M0DIF')
+        self.wfit = self.read(sims_folder +
+                              '/wfit_' +
+                              'FITOPT' + fitnum + '_' +
+                              'MUOPT' + munum + '.YAML')
         self.act_data = act_data
-        self.name = name
+        if sample_sims:
+            self.sims_data = self.sample_sims(self.sims_data, self.act_data)
 
     # =================================================================== #
     #                               Methods                               #
@@ -259,16 +403,21 @@ class Checker(object):
         ----------
         kernel: scipy.stats.kde.gaussian_kde
             the Gaussian KDE of the simulated SNANA on the specified axes'''
+        abs_sims = self.find_name[abs_name][0]
+        ord_sims = self.find_name[ord_name][0]
+
         if (abs_name == 'mass') or (ord_name == 'mass'):
             sims_data = self.sims_data[
                 self.sims_data[self.find_name['mass'][0]] > 7]
         else:
             sims_data = self.sims_data
 
-        abs_sims = self.find_name[abs_name][0]
-        ord_sims = self.find_name[ord_name][0]
         m1 = sims_data[abs_sims]
         m2 = sims_data[ord_sims]
+        if abs_sims == 'redshift':
+            m1 = np.log10(m1)
+        elif ord_sims == 'redshift':
+            m2 = np.log10(m2)
         values = np.vstack([m1, m2])
         kernel = stats.gaussian_kde(values)
 
@@ -424,8 +573,8 @@ class Checker(object):
             act_data = self.act_data
 
         if survey != 'all':
-            sims_data = sims_data[sims_data['IDSURVEY'].isin([
-                self.find_id.get(key) for key in survey])]
+            sims_data = sims_data[sims_data['IDSURVEY'].isin(
+                self.find_id.get(key) for key in survey)]
             act_data = act_data[act_data['survey'].isin(survey)]
 
         prophist = dict(alpha=alpha, density=True)
