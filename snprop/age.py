@@ -95,10 +95,10 @@ class PrompDelayModel(object):
 
     # HOST MASS
     def set_distprop_mass(self,
-                          mu_prompt=9.41, sigma_prompt=0.62,
-                          a=0.90,
-                          mu_delayed1=10.60, sigma_delayed1=0.38,
-                          mu_delayed2=8.74, sigma_delayed2=0.43):
+                          mu_prompt=9.33, sigma_prompt=0.58,
+                          a=0.92,
+                          mu_delayed1=10.44, sigma_delayed1=0.38,
+                          mu_delayed2=9.11, sigma_delayed2=0.01):
         """
         Set the parameters of the SNe Ia mass distribution,
         modeled as one Gaussian for the prompt,

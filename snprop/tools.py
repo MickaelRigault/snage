@@ -1,5 +1,8 @@
+from astropy.cosmology import Planck15 as Planck15
+from astropy import units
 from scipy import stats
 
+import re
 import glob
 import numpy as np
 import pandas as pd
@@ -201,9 +204,9 @@ class Checker(object):
 
     # Optional:
     # If saved kernel from `checkit.set_kernel`:
-        ax = checkit.show_kernel('mass_stretch', aspect=.5)
+        ax = checkit.show_kernel('mass_stretch')
     # To give another kernel:
-        ax = checkit.show_kernel(kernel, abs_name, ord_name, aspect=.5)
+        ax = checkit.show_kernel(kernel, abs_name, ord_name)
     checkit.show_scatter('mass', 'stretch', ax=ax, **kwargs)'''
 
     # =================================================================== #
@@ -217,7 +220,7 @@ class Checker(object):
     # Dictionary of saved imshow of kernel
     kernels_show = dict()
     # Gives "IDSURVEY" corresponding to Pantheon name
-    find_id = {'low-z': [5, 64, 65, 66],
+    find_id = {'LOWZ': [5, 64, 65, 66],
                'SDSS':  [1],
                'PS1':   [15],
                'SNLS':  [4]}
@@ -237,9 +240,9 @@ class Checker(object):
     # =================================================================== #
 
     @staticmethod
-    def get_numbers(folder):
+    def get_numbers(folder, opt=True):
         '''Returns the possible FITOPT and MUOPT numbers from a SNANA output
-        folder.
+        folder if "opt" is True, or the BBCFIT numbers otherwise.
         Parameter
         ---------
         folder: string
@@ -251,13 +254,20 @@ class Checker(object):
         Array of the combinations of number that exist in the folder.
         '''
         folnums = []
-        for file in glob.glob(folder + '/FITOPT*'):
-            folnums.append([file.split('/')[-1].split('_')[0][-3:],
-                            file.split('/')[-1].split('.')[-2][-3:]])
-        return np.unique(folnums)
+        if opt:
+            for file in glob.glob(folder + '/FITOPT*'):
+                folnums.append([file.split('/')[-1].split('_')[0][-3:],
+                                file.split('/')[-1].split('.')[-2][-3:]])
+            return np.unique(folnums, axis=0)
+        else:
+            folstrs = []
+            for fd in glob.glob(folder + 'OUTPUT_BBCFIT*'):
+                folstrs.append(fd.split('-')[-1])
+                folnums.append(int(fd.split('-')[-1]))
+            return folstrs, folnums
 
     @staticmethod
-    def read(filename):
+    def read(filename, gab=False, ind=None):
         '''Read relevant data depending on the extension of said file.
         Parameter
         ---------
@@ -270,33 +280,58 @@ class Checker(object):
         -------
         A DataFrame containing the asked file's data in a readable way.
         '''
-        # Get the filetype
-        ftype = filename.split('.')[-1].lower()
-        # If it's a `wfit[...].YAML` file, we want a DataFrame whose columns
-        # are the parameters and the one line is the values; that way it'll be
-        # concatenable with other results
-        if ftype == 'yaml':
-            return pd.read_csv(filename,
-                               sep=':\\s+', engine='python',
-                               header=None, index_col=0).transpose()
-        # Otherwise, we want to get rid of the commented lines, get the column
-        # names that are after `VARNAMES`, and each line is either a `SN:` or
-        # `ROW` line.
+        if gab:
+            f = open(filename)
+            lines = f.readlines()
+            gab_lines = lines[31:34]
+            pnames = [re.split('0',
+                               re.split('=\s+',
+                                        gab_lines[i])[0][3:])[0]
+                      for i in range(3)]
+            for p in [1, 3, 5]:
+                pnames.insert(p, pnames[p-1]+'_err')
+            pvals = [[float(re.split('\s+\\n',
+                                     re.split('\s\+-\s+',
+                                              re.split('=\s+',
+                                                       gab_lines[i])
+                                              [-1])
+                                     [k])
+                            [0])
+                      for k in range(2)]
+                     for i in range(3)]
+            pvals = [item for sublist in pvals for item in sublist]
+            gab_val = pd.DataFrame({name: pvals[n]
+                                    for n, name in enumerate(pnames)},
+                                   index=[0] if ind is None else [ind])
+            return gab_val
         else:
-            todel = {'fitres': 'SN', 'm0dif': 'ROW'}
-            with open(filename) as f:
-                for i, line in enumerate(f):
-                    if line.startswith('VARNAMES:'):
-                        line = line.replace(',', ' ')
-                        line = line.replace('\n', '')
-                        names = line.split()
-                    elif line.startswith(todel[ftype]):
-                        startrows = i
-                        break
-            pandas = pd.read_csv(filename, header=None,
-                                 names=names, skiprows=startrows,
-                                 delim_whitespace=True, comment='#')
-            return pandas.drop('VARNAMES:', axis=1)
+            # Get the filetype
+            ftype = filename.split('.')[-1].lower()
+            # If it's a `wfit[...].YAML` file, we want a DataFrame whose
+            # columns are the parameters and the one line is the values; that
+            # way it'll be concatenable with other results
+            if ftype == 'yaml':
+                return pd.read_csv(filename,
+                                   sep=':\\s+', engine='python',
+                                   header=None, index_col=0).transpose()
+            # Otherwise, we want to get rid of the commented lines, get the
+            # column names that are after `VARNAMES`, and each line is either a
+            # `SN:` or `ROW:` line.
+            else:
+                # todel = {'fitres': 'SN', 'm0dif': 'ROW'}
+                with open(filename) as f:
+                    for i, line in enumerate(f):
+                        if line.startswith('VARNAMES:'):
+                            line = line.replace(',', ' ')
+                            line = line.replace('\n', '')
+                            names = line.split()
+                        elif line.startswith(('SN', 'ROW')):
+                            startrows = i
+                            break
+                pandas = pd.read_csv(filename, header=None,
+                                     names=names, skiprows=startrows,
+                                     delim_whitespace=True, comment='#')
+                return pandas.drop('VARNAMES:', axis=1)
 
     @staticmethod
     def sample_sims(fitres, data):
@@ -312,15 +347,10 @@ class Checker(object):
         -------
         Returns a modified DataFrame of the fitres whose survey ratio mimics
         that of the data.'''
-        # Gives "IDSURVEY" corresponding to Pantheon name
-        find_id = {'low-z': [5, 64, 65, 66],
-                   'SDSS':  [1],
-                   'PS1':   [15],
-                   'SNLS':  [4]}
         # Extract the surveys' names from the data
         surveys = np.unique(data['survey'])
         # Take the corresponding ids using previous `find_id` dict
-        ids = [find_id[survey] for survey in surveys]
+        ids = [Checker.find_id[survey] for survey in surveys]
         # Compute the size of each survey in the data
         surveys_size = {survey:
                         len(data[data['survey'] == survey])
@@ -337,10 +367,12 @@ class Checker(object):
         # best is to take the lowest value of the lowest survey from the sims
         # that will allow the ratio of the others wrt to the lowest to exist
         # (i.e. the numbers for the non-lowest can't be higher than their
-        # current value)
-        todraw = {lowest: int(np.min([fitres_size[other]*surveys_size[lowest]
-                                      / surveys_size[other]
-                                      for other in survothers]))}
+        # current value); if the resulting lowest sample is higher than what
+        # is available in the fitres, take the max of the fitres then.
+        lowsug = np.min([fitres_size[other]*surveys_size[lowest]
+                        / surveys_size[other]
+                        for other in survothers])
+        todraw = {lowest: int(np.min([lowsug, fitres_size[lowest]]))}
         # Loop on the others
         for other in survothers:
             todraw[other] = int(todraw[lowest]*surveys_size[other]
@@ -362,9 +394,12 @@ class Checker(object):
         '''Loads all the relevant information from a SNANA BIASCOR folder'''
         fitnum, munum = folnum
         if name is None:
-            self.name = sims_folder.split('/')[-1]
+            sept = [sims_folder.split('/')[i].split('_')
+                    for i in range(len(sims_folder.split('/')))]
+            self.name = '_'.join([sept[5][-1]] + sept[6][-2:])
         else:
             self.name = name
+        sims_prefolder = '%s' % ('/'.join(sims_folder.split('/')[:-1]))
         self.sims_data = self.read(sims_folder +
                                    '/FITOPT' + fitnum + '_' +
                                    'MUOPT' + munum + '.FITRES')
@@ -375,6 +410,7 @@ class Checker(object):
                               '/wfit_' +
                               'FITOPT' + fitnum + '_' +
                               'MUOPT' + munum + '.YAML')
+        self.wall = self.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
         self.act_data = act_data
         if sample_sims:
             self.sims_data = self.sample_sims(self.sims_data, self.act_data)
@@ -414,10 +450,6 @@ class Checker(object):
 
         m1 = sims_data[abs_sims]
         m2 = sims_data[ord_sims]
-        if abs_sims == 'redshift':
-            m1 = np.log10(m1)
-        elif ord_sims == 'redshift':
-            m2 = np.log10(m2)
         values = np.vstack([m1, m2])
         kernel = stats.gaussian_kde(values)
 
@@ -430,12 +462,22 @@ class Checker(object):
             ymin = m2.min()
             ymax = m2.max()
 
-            X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+            if (abs_name == 'redshift'):
+                X, Y = np.mgrid[np.log10(xmin):np.log10(xmax):100j,
+                                ymin:ymax:100j]
+                X = 10**X
+            if (ord_name == 'redshift'):
+                X, Y = np.mgrid[xmin:xmax:100j,
+                                np.log10(ymin):np.log10(ymax):100j]
+                Y = 10**Y
+            else:
+                X, Y = np.mgrid[xmin:xmax:100j,
+                                ymin:ymax:100j]
             positions = np.vstack([X.ravel(), Y.ravel()])
             Z = np.reshape(kernel(positions), X.shape)
 
             self.kernels[kernel_name] = kernel
-            self.kernels_show[kernel_name] = Z
+            self.kernels_show[kernel_name] = [X, Y, Z]
 
             return kernel
 
@@ -494,10 +536,10 @@ class Checker(object):
         # ----------------------------------------------------------- #
 
     def show_kernel(self,
-                    kernel_name=None,
-                    kernel=None, abs_name=None, ord_name=None,
+                    kernel_name=None, abs_name=None, ord_name=None,
+                    kernel=None, xscale='linear', yscale='linear',
                     ax=None, show_cb=True, cax=None,
-                    aspect=1, alpha_kernel=1,
+                    alpha_kernel=1,
                     ticksize='x-large', fsize='x-large'):
         '''Represents the interpolated kernel as an imshow'''
         if ax is None:
@@ -513,21 +555,40 @@ class Checker(object):
             xmax = self.kernels[kernel_name].dataset[0].max()
             ymin = self.kernels[kernel_name].dataset[1].min()
             ymax = self.kernels[kernel_name].dataset[1].max()
-            Z = self.kernels_show[kernel_name]
-            abs_name, ord_name = kernel_name.split('_')
+            X, Y, Z = self.kernels_show[kernel_name]
+            if (abs_name is None) and (ord_name is None):
+                abs_name, ord_name = kernel_name.split('_')
         if (kernel_name is None) and (kernel is not None):
             xmin = kernel.dataset[0].min()
             xmax = kernel.dataset[0].max()
             ymin = kernel.dataset[1].min()
             ymax = kernel.dataset[1].max()
 
+            if (xscale == 'linear') and (yscale == 'linear'):
+                X, Y = np.mgrid[xmin:xmax:100j,
+                                ymin:ymax:100j]
+            if (xscale == 'log') and (yscale == 'linear'):
+                X, Y = np.mgrid[np.log10(xmin):np.log10(xmax):100j,
+                                ymin:ymax:100j]
+                X = 10**X
+            if (yscale == 'log') and (xscale == 'linear'):
+                X, Y = np.mgrid[xmin:xmax:100j,
+                                np.log10(ymin):np.log10(ymax):100j]
+                Y = 10**Y
+            if (xscale == 'log') and (yscale == 'log'):
+                X, Y = np.mgrid[np.log10(xmin):np.log10(xmax):100j,
+                                np.log10(ymin):np.log10(ymax):100j]
+            else:
+                raise NameError('Scales must be `"log"` or `"linear"`')
             X, Y = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
             positions = np.vstack([X.ravel(), Y.ravel()])
             Z = np.reshape(kernel(positions), X.shape)
 
-        ims = ax.imshow(np.rot90(Z), cmap=cmap_tpw,
-                        extent=[xmin, xmax, ymin, ymax],
-                        aspect=aspect, alpha=alpha_kernel)
+        ims = ax.pcolor(X, Y, Z, cmap=cmap_tpw,
+                        shading='auto', alpha=alpha_kernel)
+
+        ax.set_xscale(xscale)
+        ax.set_yscale(yscale)
 
         if show_cb is True:
             if cax is None:
@@ -752,3 +813,84 @@ class Checker(object):
         fig.suptitle(self.name, fontsize=20)
 
         return fig
+
+        # ----------------------------------------------------------- #
+        #                           HResidu                           #
+        # ----------------------------------------------------------- #
+
+    def show_hr(self,
+                ax1=None, ax2=None,
+                cosmo=Planck15, show_leg=True,
+                fmt_sims='.', alpha_sims=0.2, fc_sims=cmap_tpw(0.2),
+                ls_model='-', alpha_model=1, fc_model='C1',
+                ticksize='x-large', fsize='x-large'):
+        '''Plots the results of the FITRES and wfit on a HR plot with residu'''
+        z_lin = np.linspace(np.min(self.sims_data['zCMB']),
+                            np.max(self.sims_data['zCMB']),
+                            1000)
+        mu_cosmo = cosmo.distmod(z_lin)/units.mag
+
+        if ax1 is not None and ax2 is None:
+            ax1.errorbar(self.sims_data.zCMB, self.sims_data.MU,
+                         xerr=self.sims_data.zCMBERR,
+                         yerr=self.sims_data.MUERR,
+                         fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                         label='Fitres data')
+            ax1.plot(z_lin, mu_cosmo,
+                     ls=ls_model, alpha=alpha_model, color=fc_model,
+                     label=cosmo.name)
+            ax1.tick_params(labelsize=ticksize)
+            ax1.set_xlabel('redshift', fontsize=fsize)
+
+            if show_leg is True:
+                ax1.legend(ncol=1, loc='upper left')
+            else:
+                pass
+
+            return ax1
+        if ax1 is None and ax2 is not None:
+            ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
+                         xerr=self.sims_data.zCMBERR,
+                         yerr=self.sims_data.MUERR,
+                         fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+            ax2.axhline(0, ls=ls_model, color=fc_model)
+            ax2.tick_params(labelsize=ticksize)
+            ax2.set_xlabel('redshift', fontsize=fsize)
+
+            if show_leg is True:
+                ax2.legend(ncol=1, loc='upper left')
+            else:
+                pass
+
+            return ax2
+        if ax1 is None and ax2 is None:
+            fig, (ax1, ax2) = plt.subplots(2, 1,
+                                           figsize=[10, 8], sharex=True)
+
+        else:
+            pass
+
+        ax1.errorbar(self.sims_data.zCMB, self.sims_data.MU,
+                     xerr=self.sims_data.zCMBERR,
+                     yerr=self.sims_data.MUERR,
+                     fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                     label='Fitres data')
+        ax1.plot(z_lin, mu_cosmo,
+                 color=fc_model, label=cosmo.name)
+
+        ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
+                     xerr=self.sims_data.zCMBERR,
+                     yerr=self.sims_data.MUERR,
+                     fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+        ax2.axhline(0, color=fc_model)
+
+        ax1.tick_params(labelsize=ticksize)
+        ax2.tick_params(labelsize=ticksize)
+        ax2.set_xlabel('redshift', fontsize=fsize)
+
+        if show_leg is True:
+            ax1.legend(ncol=1, loc='upper left')
+        else:
+            pass
+
+        return (ax1, ax2)
