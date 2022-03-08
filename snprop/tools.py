@@ -236,6 +236,58 @@ class Checker(object):
                               'cERR', 'colors_err']}
 
     # =================================================================== #
+    #                               Initial                               #
+    # =================================================================== #
+
+    def __init__(self, sims_data, act_data, params=None):
+        self.sims_data = sims_data
+        self.act_data = act_data
+        if params is not None:
+            self.modif, self.wfit, self.wall = params
+
+    @classmethod
+    def from_biascor(cls, sims_folder, act_data,
+                     folnum=['000', '000'],
+                     sample_sims=True, name=None,
+                     cols=['CID', 'IDSURVEY', 'zCMB', 'zCMBERR',
+                           'HOST_LOGMASS', 'HOST_LOGMASS_ERR',
+                           'x1', 'x1ERR', 'MU', 'MUERR', 'MURES']):
+        '''Loads all the relevant information from a SNANA BIASCOR folder'''
+        fitnum, munum = folnum
+        if name is None:
+            sept = [sims_folder.split('/')[i].split('_')
+                    for i in range(len(sims_folder.split('/')))]
+            cls.name = '_'.join([sept[5][-1]] + sept[7][-2:])
+        else:
+            pass
+        sims_prefolder = '%s' % ('/'.join(sims_folder.split('/')[:-2]))
+        sims_data = cls.read(sims_folder +
+                             '/FITOPT' + fitnum + '_' +
+                             'MUOPT' + munum + '.FITRES')
+        modif = cls.read(sims_folder +
+                         '/FITOPT' + fitnum + '_' +
+                         'MUOPT' + munum + '.M0DIF')
+        wfit = cls.read(sims_folder +
+                        '/wfit_' +
+                        'FITOPT' + fitnum + '_' +
+                        'MUOPT' + munum + '.YAML')
+        wall = cls.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
+        params = [modif, wfit, wall]
+
+        if sample_sims:
+            sims_data = cls.sample_sims(sims_data, act_data)
+
+        return cls(sims_data[cols], act_data, params)
+
+    @classmethod
+    def from_input(cls, sims_data, act_data, sample_sims=True,
+                   cols=['CID', 'IDSURVEY', 'zCMB', 'zCMBERR',
+                         'HOST_LOGMASS', 'HOST_LOGMASS_ERR',
+                         'x1', 'x1ERR', 'MU', 'MUERR', 'MURES']):
+        sims_data = cls.sample_sims(sims_data, act_data)
+        return cls(sims_data[cols], act_data)
+
+    # =================================================================== #
     #                               Extfunc                               #
     # =================================================================== #
 
@@ -383,37 +435,6 @@ class Checker(object):
             for survey, idsurvey in zip(surveys, ids)]
         # Concatenate
         return pd.concat(fitres_sub)
-
-    # =================================================================== #
-    #                               Initial                               #
-    # =================================================================== #
-
-    def __init__(self, sims_folder, act_data,
-                 folnum=['000', '000'],
-                 sample_sims=True, name=None):
-        '''Loads all the relevant information from a SNANA BIASCOR folder'''
-        fitnum, munum = folnum
-        if name is None:
-            sept = [sims_folder.split('/')[i].split('_')
-                    for i in range(len(sims_folder.split('/')))]
-            self.name = '_'.join([sept[5][-1]] + sept[6][-2:])
-        else:
-            self.name = name
-        sims_prefolder = '%s' % ('/'.join(sims_folder.split('/')[:-1]))
-        self.sims_data = self.read(sims_folder +
-                                   '/FITOPT' + fitnum + '_' +
-                                   'MUOPT' + munum + '.FITRES')
-        self.modif = self.read(sims_folder +
-                               '/FITOPT' + fitnum + '_' +
-                               'MUOPT' + munum + '.M0DIF')
-        self.wfit = self.read(sims_folder +
-                              '/wfit_' +
-                              'FITOPT' + fitnum + '_' +
-                              'MUOPT' + munum + '.YAML')
-        self.wall = self.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
-        self.act_data = act_data
-        if sample_sims:
-            self.sims_data = self.sample_sims(self.sims_data, self.act_data)
 
     # =================================================================== #
     #                               Methods                               #
@@ -821,6 +842,7 @@ class Checker(object):
     def show_hr(self,
                 ax1=None, ax2=None,
                 cosmo=Planck15, show_leg=True,
+                bins=20,
                 fmt_sims='.', alpha_sims=0.2, fc_sims=cmap_tpw(0.2),
                 ls_model='-', alpha_model=1, fc_model='C1',
                 ticksize='x-large', fsize='x-large'):
@@ -830,67 +852,129 @@ class Checker(object):
                             1000)
         mu_cosmo = cosmo.distmod(z_lin)/units.mag
 
-        if ax1 is not None and ax2 is None:
+        if bins is None:
+            if ax1 is not None and ax2 is None:
+                ax1.errorbar(self.sims_data.zCMB, self.sims_data.MU,
+                             xerr=self.sims_data.zCMBERR,
+                             yerr=self.sims_data.MUERR,
+                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                             label='Fitres data')
+                ax1.plot(z_lin, mu_cosmo,
+                         ls=ls_model, alpha=alpha_model, color=fc_model,
+                         label=cosmo.name)
+                ax1.tick_params(labelsize=ticksize)
+                ax1.set_xlabel('redshift', fontsize=fsize)
+                ax1.set_ylabel(r'$\mu$', fontsize=fsize)
+
+                if show_leg is True:
+                    ax1.legend(ncol=1, loc='upper left')
+                else:
+                    pass
+
+                return ax1
+            if ax1 is None and ax2 is not None:
+                ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
+                             xerr=self.sims_data.zCMBERR,
+                             yerr=self.sims_data.MUERR,
+                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+                ax2.axhline(0, ls=ls_model, color=fc_model)
+                ax2.tick_params(labelsize=ticksize)
+                ax2.set_xlabel('redshift', fontsize=fsize)
+                ax2.set_ylabel(r'$\Delta\mu$', fontsize=fsize)
+
+                if show_leg is True:
+                    ax2.legend(ncol=1, loc='upper left')
+                else:
+                    pass
+
+                return ax2
+            if ax1 is None and ax2 is None:
+                fig, (ax1, ax2) = plt.subplots(2, 1,
+                                               figsize=[10, 8], sharex=True)
+
+            else:
+                pass
+
             ax1.errorbar(self.sims_data.zCMB, self.sims_data.MU,
                          xerr=self.sims_data.zCMBERR,
                          yerr=self.sims_data.MUERR,
                          fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
                          label='Fitres data')
             ax1.plot(z_lin, mu_cosmo,
-                     ls=ls_model, alpha=alpha_model, color=fc_model,
-                     label=cosmo.name)
+                     color=fc_model, label=cosmo.name)
+            ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
+                         xerr=self.sims_data.zCMBERR,
+                         yerr=self.sims_data.MUERR,
+                         fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+            ax2.axhline(0, color=fc_model)
+
+        else:
+            sims_plot = self.sims_data.copy()
+            sims_plot['zBIN'] = pd.cut(sims_plot.zCMB, bins)
+            sims_plot = sims_plot.groupby('zBIN').mean()
+
+            if ax1 is not None and ax2 is None:
+                ax1.errorbar(sims_plot.zCMB, sims_plot.MU,
+                             xerr=sims_plot.zCMBERR,
+                             yerr=sims_plot.MUERR,
+                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                             label='Fitres data')
+                ax1.plot(z_lin, mu_cosmo,
+                         ls=ls_model, alpha=alpha_model, color=fc_model,
+                         label=cosmo.name)
+                ax1.tick_params(labelsize=ticksize)
+                ax1.set_xlabel('redshift', fontsize=fsize)
+
+                if show_leg is True:
+                    ax1.legend(ncol=1, loc='upper left')
+                else:
+                    pass
+
+                return ax1
+            if ax1 is None and ax2 is not None:
+                ax2.errorbar(sims_plot.zCMB, sims_plot.MURES,
+                             xerr=sims_plot.zCMBERR,
+                             yerr=sims_plot.MUERR,
+                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+                ax2.axhline(0, ls=ls_model, color=fc_model)
+                ax2.tick_params(labelsize=ticksize)
+                ax2.set_xlabel('redshift', fontsize=fsize)
+
+                if show_leg is True:
+                    ax2.legend(ncol=1, loc='upper left')
+                else:
+                    pass
+
+                return ax2
+            if ax1 is None and ax2 is None:
+                fig, (ax1, ax2) = plt.subplots(2, 1,
+                                               figsize=[10, 8], sharex=True)
+
+            else:
+                pass
+
+            ax1.errorbar(sims_plot.zCMB, sims_plot.MU,
+                         xerr=sims_plot.zCMBERR,
+                         yerr=sims_plot.MUERR,
+                         fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                         label='Fitres data')
+            ax1.plot(z_lin, mu_cosmo,
+                     color=fc_model, label=cosmo.name)
+            ax2.errorbar(sims_plot.zCMB, sims_plot.MURES,
+                         xerr=sims_plot.zCMBERR,
+                         yerr=sims_plot.MUERR,
+                         fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+            ax2.axhline(0, color=fc_model)
+
             ax1.tick_params(labelsize=ticksize)
-            ax1.set_xlabel('redshift', fontsize=fsize)
+            ax2.tick_params(labelsize=ticksize)
+            ax2.set_xlabel('redshift', fontsize=fsize)
+            ax1.set_ylabel(r'$\mu$', fontsize=fsize)
+            ax2.set_ylabel(r'$\Delta\mu$', fontsize=fsize)
 
             if show_leg is True:
                 ax1.legend(ncol=1, loc='upper left')
             else:
                 pass
-
-            return ax1
-        if ax1 is None and ax2 is not None:
-            ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
-                         xerr=self.sims_data.zCMBERR,
-                         yerr=self.sims_data.MUERR,
-                         fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
-            ax2.axhline(0, ls=ls_model, color=fc_model)
-            ax2.tick_params(labelsize=ticksize)
-            ax2.set_xlabel('redshift', fontsize=fsize)
-
-            if show_leg is True:
-                ax2.legend(ncol=1, loc='upper left')
-            else:
-                pass
-
-            return ax2
-        if ax1 is None and ax2 is None:
-            fig, (ax1, ax2) = plt.subplots(2, 1,
-                                           figsize=[10, 8], sharex=True)
-
-        else:
-            pass
-
-        ax1.errorbar(self.sims_data.zCMB, self.sims_data.MU,
-                     xerr=self.sims_data.zCMBERR,
-                     yerr=self.sims_data.MUERR,
-                     fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
-                     label='Fitres data')
-        ax1.plot(z_lin, mu_cosmo,
-                 color=fc_model, label=cosmo.name)
-
-        ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
-                     xerr=self.sims_data.zCMBERR,
-                     yerr=self.sims_data.MUERR,
-                     fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
-        ax2.axhline(0, color=fc_model)
-
-        ax1.tick_params(labelsize=ticksize)
-        ax2.tick_params(labelsize=ticksize)
-        ax2.set_xlabel('redshift', fontsize=fsize)
-
-        if show_leg is True:
-            ax1.legend(ncol=1, loc='upper left')
-        else:
-            pass
 
         return (ax1, ax2)
