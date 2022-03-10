@@ -95,10 +95,10 @@ class PrompDelayModel(object):
 
     # HOST MASS
     def set_distprop_mass(self,
-                          mu_prompt=9.33, sigma_prompt=0.58,
-                          a=0.92,
-                          mu_delayed1=10.44, sigma_delayed1=0.38,
-                          mu_delayed2=9.11, sigma_delayed2=0.01):
+                          mu_prompt=9.23,
+                          sigmaup_prompt=0.96, sigmadown_prompt=0.47,
+                          mu_delayed=10.61,
+                          sigmaup_delayed=0.44, sigmadown_delayed=0.40):
         """
         Set the parameters of the SNe Ia mass distribution,
         modeled as one Gaussian for the prompt,
@@ -106,11 +106,11 @@ class PrompDelayModel(object):
         """
         self._distprop_mass = \
             {"prompt":
-             {"mu": mu_prompt, "sigma": sigma_prompt},
+             {"mu": mu_prompt, "sigmaup": sigmaup_prompt,
+              "sigmadown": sigmadown_prompt},
              "delayed":
-             {"a": a,
-              "mu_1": mu_delayed1, "sigma_1": sigma_delayed1,
-              "mu_2": mu_delayed2, "sigma_2": sigma_delayed2}}
+             {"mu": mu_delayed, "sigmaup": sigmaup_delayed,
+              "sigmadown": sigmadown_delayed}}
 
     # HUBBLE RESIDUALS
     def set_distprop_hr(self, mean_prompt=0.075, sigma_prompt=0.1,
@@ -245,31 +245,11 @@ class PrompDelayModel(object):
                 "No redshift dependency implemented for get_distpdf_mass()." +
                 "Set z=None")
 
-        prompt_pdf = stats.norm.pdf(x,
-                                    loc=self.distprop_mass["prompt"]
-                                    ["mu"],
-                                    scale=np.sqrt(
-                                        self.distprop_mass["prompt"]
-                                        ["sigma"]**2 + dx**2))
-
-        delay_pdf1 = stats.norm.pdf(x,
-                                    loc=self.distprop_mass["delayed"]
-                                    ["mu_1"],
-                                    scale=np.sqrt(
-                                        self.distprop_mass["delayed"]
-                                        ["sigma_1"]**2 + dx**2))
-
-        delay_pdf2 = stats.norm.pdf(x,
-                                    loc=self.distprop_mass["delayed"]
-                                    ["mu_2"],
-                                    scale=np.sqrt(
-                                        self.distprop_mass["delayed"]
-                                        ["sigma_2"]**2 + dx**2))
-
-        return(fprompt * prompt_pdf +
-               (1-fprompt) * (self.distprop_mass["delayed"]["a"]*delay_pdf1 +
-                              (1-self.distprop_mass["delayed"]["a"]) *
-                              delay_pdf2))
+        prompt = asym_gaussian(
+            x, *list(self.distprop_mass["prompt"].values()), dx=dx)
+        delayed = asym_gaussian(
+            x, *list(self.distprop_mass["delayed"].values()), dx=dx)
+        return fprompt*prompt + (1-fprompt) * delayed
 
     # - HR
     def get_distpdf_hr(self, x, fprompt, dx=None, **kwargs):

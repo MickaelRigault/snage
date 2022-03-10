@@ -239,14 +239,16 @@ class Checker(object):
     #                               Initial                               #
     # =================================================================== #
 
-    def __init__(self, sims_data, act_data, params=None):
+    def __init__(self, sims_data, act_data, name, params=None):
         self.sims_data = sims_data
         self.act_data = act_data
+        self.name = name
         if params is not None:
-            self.modif, self.wfit, self.wall = params
+            self.modif, self.wfit, self.wall, self.gab = params
 
     @classmethod
     def from_biascor(cls, sims_folder, act_data,
+                     ssize=False,
                      folnum=['000', '000'],
                      sample_sims=True, name=None,
                      cols=['CID', 'IDSURVEY', 'zCMB', 'zCMBERR',
@@ -257,35 +259,54 @@ class Checker(object):
         if name is None:
             sept = [sims_folder.split('/')[i].split('_')
                     for i in range(len(sims_folder.split('/')))]
-            cls.name = '_'.join([sept[5][-1]] + sept[7][-2:])
+            name = '_'.join([sept[5][-1]] + sept[7][-2:])
         else:
             pass
         sims_prefolder = '%s' % ('/'.join(sims_folder.split('/')[:-2]))
-        sims_data = cls.read(sims_folder +
+        if ~ssize:
+            sims_data = cls.read(sims_folder +
+                                 '/FITOPT' + fitnum + '_' +
+                                 'MUOPT' + munum + '.FITRES')
+            modif = cls.read(sims_folder +
                              '/FITOPT' + fitnum + '_' +
-                             'MUOPT' + munum + '.FITRES')
-        modif = cls.read(sims_folder +
-                         '/FITOPT' + fitnum + '_' +
-                         'MUOPT' + munum + '.M0DIF')
-        wfit = cls.read(sims_folder +
-                        '/wfit_' +
-                        'FITOPT' + fitnum + '_' +
-                        'MUOPT' + munum + '.YAML')
-        wall = cls.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
-        params = [modif, wfit, wall]
+                             'MUOPT' + munum + '.M0DIF')
+            wfit = cls.read(sims_folder +
+                            '/wfit_' +
+                            'FITOPT' + fitnum + '_' +
+                            'MUOPT' + munum + '.YAML')
+            wall = cls.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
+            gab = cls.read(sims_folder +
+                           '/FITOPT' + fitnum + '_' +
+                           'MUOPT' + munum + '.FITRES',
+                           True)
+            params = [modif, wfit, wall, gab]
+        else:
+            sims_path = glob.glob(sims_folder[:-1] +
+                                  '-*/FITOPT' + fitnum + '_' +
+                                  'MUOPT' + munum + '.FITRES')
+            sims_data = pd.concat([cls.read(f) for f in sims_path])
 
         if sample_sims:
             sims_data = cls.sample_sims(sims_data, act_data)
 
-        return cls(sims_data[cols], act_data, params)
+        if cols is None:
+            return cls(sims_data, act_data, name, params)
+        else:
+            return cls(sims_data[cols], act_data, name, params)
 
+#    @classmethod
+#    def from_multiple(cls, sims_folder, act_data,
+#                      folnum=['000', '000'],
+#                      sample_sims=True, name=None,
+#                      cols=[
+#
     @classmethod
-    def from_input(cls, sims_data, act_data, sample_sims=True,
+    def from_input(cls, sims_data, act_data, name=None, sample_sims=True,
                    cols=['CID', 'IDSURVEY', 'zCMB', 'zCMBERR',
                          'HOST_LOGMASS', 'HOST_LOGMASS_ERR',
                          'x1', 'x1ERR', 'MU', 'MUERR', 'MURES']):
         sims_data = cls.sample_sims(sims_data, act_data)
-        return cls(sims_data[cols], act_data)
+        return cls(sims_data[cols], act_data, name)
 
     # =================================================================== #
     #                               Extfunc                               #
@@ -841,9 +862,10 @@ class Checker(object):
 
     def show_hr(self,
                 ax1=None, ax2=None,
-                cosmo=Planck15, show_leg=True,
+                cosmo=Planck15,
+                sims_label='FITRES', show_leg=True,
                 bins=20,
-                fmt_sims='.', alpha_sims=0.2, fc_sims=cmap_tpw(0.2),
+                fmt_sims='o', alpha_sims=0.2, fc_sims=cmap_tpw(0.2),
                 ls_model='-', alpha_model=1, fc_model='C1',
                 ticksize='x-large', fsize='x-large'):
         '''Plots the results of the FITRES and wfit on a HR plot with residu'''
@@ -876,7 +898,8 @@ class Checker(object):
                 ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
                              xerr=self.sims_data.zCMBERR,
                              yerr=self.sims_data.MUERR,
-                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                             label=sims_label)
                 ax2.axhline(0, ls=ls_model, color=fc_model)
                 ax2.tick_params(labelsize=ticksize)
                 ax2.set_xlabel('redshift', fontsize=fsize)
@@ -899,7 +922,7 @@ class Checker(object):
                          xerr=self.sims_data.zCMBERR,
                          yerr=self.sims_data.MUERR,
                          fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
-                         label='Fitres data')
+                         label=sims_label)
             ax1.plot(z_lin, mu_cosmo,
                      color=fc_model, label=cosmo.name)
             ax2.errorbar(self.sims_data.zCMB, self.sims_data.MURES,
@@ -911,14 +934,18 @@ class Checker(object):
         else:
             sims_plot = self.sims_data.copy()
             sims_plot['zBIN'] = pd.cut(sims_plot.zCMB, bins)
-            sims_plot = sims_plot.groupby('zBIN').mean()
+            sims_plotg = sims_plot.groupby('zBIN').mean()
+            sims_plotg['MUERR'] = sims_plot.groupby('zBIN')['MU'].std() /\
+                sims_plot.groupby('zBIN')['MU'].size()
+            sims_plotg['MURESERR'] = sims_plot.groupby('zBIN')['MURES'].std() /\
+                sims_plot.groupby('zBIN')['MURES'].size()
 
             if ax1 is not None and ax2 is None:
-                ax1.errorbar(sims_plot.zCMB, sims_plot.MU,
-                             xerr=sims_plot.zCMBERR,
-                             yerr=sims_plot.MUERR,
+                ax1.errorbar(sims_plotg.zCMB, sims_plotg.MU,
+                             xerr=sims_plotg.zCMBERR,
+                             yerr=sims_plotg.MUERR,
                              fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
-                             label='Fitres data')
+                             label=sims_label)
                 ax1.plot(z_lin, mu_cosmo,
                          ls=ls_model, alpha=alpha_model, color=fc_model,
                          label=cosmo.name)
@@ -932,10 +959,11 @@ class Checker(object):
 
                 return ax1
             if ax1 is None and ax2 is not None:
-                ax2.errorbar(sims_plot.zCMB, sims_plot.MURES,
-                             xerr=sims_plot.zCMBERR,
-                             yerr=sims_plot.MUERR,
-                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
+                ax2.errorbar(sims_plotg.zCMB, sims_plotg.MURES,
+                             xerr=sims_plotg.zCMBERR,
+                             yerr=sims_plotg.MURESERR,
+                             fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
+                             label=sims_label)
                 ax2.axhline(0, ls=ls_model, color=fc_model)
                 ax2.tick_params(labelsize=ticksize)
                 ax2.set_xlabel('redshift', fontsize=fsize)
@@ -953,16 +981,16 @@ class Checker(object):
             else:
                 pass
 
-            ax1.errorbar(sims_plot.zCMB, sims_plot.MU,
-                         xerr=sims_plot.zCMBERR,
-                         yerr=sims_plot.MUERR,
+            ax1.errorbar(sims_plotg.zCMB, sims_plotg.MU,
+                         xerr=sims_plotg.zCMBERR,
+                         yerr=sims_plotg.MUERR,
                          fmt=fmt_sims, alpha=alpha_sims, color=fc_sims,
-                         label='Fitres data')
+                         label=sims_label)
             ax1.plot(z_lin, mu_cosmo,
                      color=fc_model, label=cosmo.name)
-            ax2.errorbar(sims_plot.zCMB, sims_plot.MURES,
-                         xerr=sims_plot.zCMBERR,
-                         yerr=sims_plot.MUERR,
+            ax2.errorbar(sims_plotg.zCMB, sims_plotg.MURES,
+                         xerr=sims_plotg.zCMBERR,
+                         yerr=sims_plotg.MURESERR,
                          fmt=fmt_sims, alpha=alpha_sims, color=fc_sims)
             ax2.axhline(0, color=fc_model)
 
@@ -978,3 +1006,19 @@ class Checker(object):
                 pass
 
         return (ax1, ax2)
+
+    def show_modif(self, ax=None, drop=14,
+                   modif_label='Mudif', show_leg=True,
+                   fmt_sims='o'):
+        if ax is None:
+            fig = plt.figure(figsize=[8, 7])
+            ax = fig.add_axes([0.1, 0.12, 0.8, 0.8])
+        if drop is not None:
+            modif_plot = self.modif.drop([drop])
+        else:
+            modif_plot = self.modif
+        ax.errorbar(modif_plot['z'], modif_plot['MUDIF'],
+                    yerr=modif_plot['MUDIFERR'],
+                    fmt=fmt_sims, label=modif_label)
+        if show_leg is True:
+            ax.legend(ncol=1, loc='upper left')
