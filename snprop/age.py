@@ -6,7 +6,7 @@ from scipy import stats
 from .tools import asym_gaussian
 
 
-class PrompDelayModel(object):
+class PromptDelayModel(object):
 
     def __init__(self):
         """ """

@@ -239,7 +239,9 @@ class Checker(object):
     #                               Initial                               #
     # =================================================================== #
 
-    def __init__(self, sims_data, act_data, name, params=None):
+    def __init__(self, sims_data, act_data,
+                 name, params=None, between_fitres=False):
+        self.between_fitres = between_fitres
         self.sims_data = sims_data
         self.act_data = act_data
         self.name = name
@@ -274,39 +276,85 @@ class Checker(object):
                             '/wfit_' +
                             'FITOPT' + fitnum + '_' +
                             'MUOPT' + munum + '.YAML')
-            wall = cls.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
+            wfit.rename(inplace=True,
+                        columns={'wsig_marg': 'w_err',
+                                 'OMsig_marg': 'OM_err'})
             gab = cls.read(sims_folder +
                            '/FITOPT' + fitnum + '_' +
                            'MUOPT' + munum + '.FITRES',
                            True)
+            wall = cls.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
             params = [modif, wfit, wall, gab]
         else:
+            # Take all the subfolders's FITRES
             sims_path = glob.glob(sims_folder[:-1] +
                                   '-*/FITOPT' + fitnum + '_' +
                                   'MUOPT' + munum + '.FITRES')
-            sims_data = pd.concat([cls.read(f) for f in sims_path])
+            # Take all the numbers
+            sims_numbers = [f.split('-')[-1].split('/')[0] for f in sims_path]
+            # Concatenate all of these
+            sims_data = pd.concat([cls.read(f) for f in sims_path],
+                                  keys=sims_numbers)
+            # Repeat for M0DIF
+            modif_path = glob.glob(sims_folder[:-1] +
+                                   '-*/FITOPT' + fitnum + '_' +
+                                   'MUOPT' + munum + '.M0DIF')
+            modif = pd.concat([cls.read(f) for f in modif_path],
+                              keys=sims_numbers)
+            # Make a dataframe using the mean of all the others and append it
+            # to the full one with index 0000
+            temp = modif.loc['0001'].copy()
+            temp['z'] = modif.groupby(level=1)['z'].mean()
+            temp['MUDIF'] = modif.groupby(level=1)['MUDIF'].mean()
+            temp['MUDIFERR'] = modif.groupby(level=1)['MUDIF'].std() /\
+                len(modif.index.levels[0])
+            temp['NFIT'] = modif.groupby(level=1)['NFIT'].sum()
+            modif = modif.append(
+                temp.assign(k='0000').set_index('k',
+                                                append=True).swaplevel(0, 1))
+            # Repeat for wfit
+            wfit_path = glob.glob(sims_folder[:-1] +
+                                  '-*/FITOPT' + fitnum + '_' +
+                                  'MUOPT' + munum + '.YAML')
+            wfit = pd.concat([cls.read(f).rename(
+                inplace=True,
+                columns={'wsig_marg': 'w_err',
+                         'OMsig_marg': 'OM_err'})
+                for f in wfit_path],
+                keys=sims_numbers)
+            # Repeat for gab
+            gab_path = glob.glob(sims_folder[:-1] +
+                                 '-*/FITOPT' + fitnum + '_' +
+                                 'MUOPT' + munum + '.FITRES',
+                                 True)
+            gab = pd.concat([cls.read(f) for f in gab_path],
+                            keys=sims_numbers)
+            # Don't repeat for wall, by definition of wall
+            wall = cls.read(sims_prefolder + '/BBC_SUMMARY_wfit.FITRES')
 
         if sample_sims:
             sims_data = cls.sample_sims(sims_data, act_data)
 
         if cols is None:
-            return cls(sims_data, act_data, name, params)
+            return cls(sims_data, act_data,
+                       name, params, between_fitres=False)
         else:
-            return cls(sims_data[cols], act_data, name, params)
+            return cls(sims_data[cols], act_data,
+                       name, params, between_fitres=False)
 
-#    @classmethod
-#    def from_multiple(cls, sims_folder, act_data,
-#                      folnum=['000', '000'],
-#                      sample_sims=True, name=None,
-#                      cols=[
-#
-    @classmethod
-    def from_input(cls, sims_data, act_data, name=None, sample_sims=True,
+    @ classmethod
+    def from_input(cls, sims_data, act_data, between_fitres=False,
+                   name=None, sample_sims=True,
                    cols=['CID', 'IDSURVEY', 'zCMB', 'zCMBERR',
                          'HOST_LOGMASS', 'HOST_LOGMASS_ERR',
                          'x1', 'x1ERR', 'MU', 'MUERR', 'MURES']):
         sims_data = cls.sample_sims(sims_data, act_data)
-        return cls(sims_data[cols], act_data, name)
+        if cols is None:
+            return cls(sims_data, act_data,
+                       name, between_fitres=between_fitres)
+        else:
+            return cls(sims_data[cols], act_data,
+                       name, between_fitres=between_fitres)
 
     # =================================================================== #
     #                               Extfunc                               #
@@ -354,24 +402,29 @@ class Checker(object):
         A DataFrame containing the asked file's data in a readable way.
         '''
         if gab:
-            f = open(filename)
-            lines = f.readlines()
-            gab_lines = lines[31:34]
+            with open(filename, 'r') as f:
+                gab_lines = [line for line in f if
+                             ('alpha0' in line) or
+                             ('beta0' in line) or
+                             ('gamma0' in line)]
+                if len(gab_lines) == 0:
+                    return 'Asked file has fixed parameters'
+                gab_lines = gab_lines[:len(gab_lines)//2]
             pnames = [re.split('0',
                                re.split('=\s+',
-                                        gab_lines[i])[0][3:])[0]
-                      for i in range(3)]
-            for p in [1, 3, 5]:
+                                        line)[0][3:])[0]
+                      for line in gab_lines]
+            for p in [1, 3, 5][:len(pnames)]:
                 pnames.insert(p, pnames[p-1]+'_err')
             pvals = [[float(re.split('\s+\\n',
                                      re.split('\s\+-\s+',
                                               re.split('=\s+',
-                                                       gab_lines[i])
+                                                       line)
                                               [-1])
                                      [k])
                             [0])
                       for k in range(2)]
-                     for i in range(3)]
+                     for line in gab_lines]
             pvals = [item for sublist in pvals for item in sublist]
             gab_val = pd.DataFrame({name: pvals[n]
                                     for n, name in enumerate(pnames)},
@@ -406,8 +459,8 @@ class Checker(object):
                                      delim_whitespace=True, comment='#')
                 return pandas.drop('VARNAMES:', axis=1)
 
-    @staticmethod
-    def sample_sims(fitres, data):
+    @ staticmethod
+    def sample_sims(fitres, data, between_fitres=False):
         '''Draws simulated data from the fitres to mimic the density of actual
         data.
         Parameters
@@ -420,18 +473,32 @@ class Checker(object):
         -------
         Returns a modified DataFrame of the fitres whose survey ratio mimics
         that of the data.'''
-        # Extract the surveys' names from the data
-        surveys = np.unique(data['survey'])
-        # Take the corresponding ids using previous `find_id` dict
-        ids = [Checker.find_id[survey] for survey in surveys]
-        # Compute the size of each survey in the data
-        surveys_size = {survey:
-                        len(data[data['survey'] == survey])
-                        for survey in surveys}
-        # And the same for the fitres
-        fitres_size = {survey:
-                       len(fitres[fitres['IDSURVEY'].isin(idsurvey)])
-                       for survey, idsurvey in zip(surveys, ids)}
+        if not between_fitres:
+            # Extract the surveys' names from the data
+            surveys = np.unique(data['survey'])
+            # Take the corresponding ids using previous `find_id` dict
+            ids = [Checker.find_id[survey] for survey in surveys]
+            # Compute the size of each survey in the data
+            surveys_size = {survey:
+                            len(data[data['survey'] == survey])
+                            for survey in surveys}
+            # And the same for the fitres
+            fitres_size = {survey:
+                           len(fitres[fitres['IDSURVEY'].isin(idsurvey)])
+                           for survey, idsurvey in zip(surveys, ids)}
+        else:
+            # Suppose all surveys are there
+            surveys = Checker.find_id.keys()
+            # Make the list of ids the same way
+            ids = [Checker.find_id[survey] for survey in surveys]
+            # Compute the size of each survey in the data
+            surveys_size = {survey:
+                            len(data[data['IDSURVEY'].isin(idsurvey)])
+                            for survey, idsurvey in zip(surveys, ids)}
+            # Same for fitres
+            fitres_size = {survey:
+                           len(fitres[fitres['IDSURVEY'].isin(idsurvey)])
+                           for survey, idsurvey in zip(surveys, ids)}
         # Get which survey has the lowest size in the data
         lowest = min(surveys_size, key=surveys_size.get)
         # Make the list of all others surveys to loop on them
@@ -443,8 +510,8 @@ class Checker(object):
         # current value); if the resulting lowest sample is higher than what
         # is available in the fitres, take the max of the fitres then.
         lowsug = np.min([fitres_size[other]*surveys_size[lowest]
-                        / surveys_size[other]
-                        for other in survothers])
+                         / surveys_size[other]
+                         for other in survothers])
         todraw = {lowest: int(np.min([lowsug, fitres_size[lowest]]))}
         # Loop on the others
         for other in survothers:
@@ -490,8 +557,14 @@ class Checker(object):
         else:
             sims_data = self.sims_data
 
-        m1 = sims_data[abs_sims]
-        m2 = sims_data[ord_sims]
+        if (abs_name == 'redshift'):
+            m1 = np.log10(sims_data[abs_sims])
+        else:
+            m1 = sims_data[abs_sims]
+        if (ord_name == 'redshift'):
+            m2 = np.log10(sims_data[ord_sims])
+        else:
+            m2 = sims_data[ord_sims]
         values = np.vstack([m1, m2])
         kernel = stats.gaussian_kde(values)
 
@@ -504,22 +577,18 @@ class Checker(object):
             ymin = m2.min()
             ymax = m2.max()
 
-            if (abs_name == 'redshift'):
-                X, Y = np.mgrid[np.log10(xmin):np.log10(xmax):100j,
-                                ymin:ymax:100j]
-                X = 10**X
-            if (ord_name == 'redshift'):
-                X, Y = np.mgrid[xmin:xmax:100j,
-                                np.log10(ymin):np.log10(ymax):100j]
-                Y = 10**Y
-            else:
-                X, Y = np.mgrid[xmin:xmax:100j,
-                                ymin:ymax:100j]
+            X, Y = np.mgrid[xmin:xmax:100j,
+                            ymin:ymax:100j]
             positions = np.vstack([X.ravel(), Y.ravel()])
             Z = np.reshape(kernel(positions), X.shape)
 
             self.kernels[kernel_name] = kernel
-            self.kernels_show[kernel_name] = [X, Y, Z]
+            if (abs_name == 'redshift') and (ord_name != 'redshift'):
+                self.kernels_show[kernel_name] = [np.power(10, X), Y, Z]
+            if (ord_name == 'redshift') and (abs_name != 'redshift'):
+                self.kernels_show[kernel_name] = [X, np.power(10, Y), Z]
+            if (abs_name != 'redshift') and (ord_name != 'redshift'):
+                self.kernels_show[kernel_name] = [X, Y, Z]
 
             return kernel
 
@@ -554,12 +623,21 @@ class Checker(object):
             pass
 
         if (abs_name == 'mass') or (ord_name == 'mass'):
-            act_data = self.act_data[
-                self.act_data[self.find_name['mass'][1]] > 7]
+            if self.between_fitres:
+                act_data = self.act_data[
+                    self.act_data[self.find_name['mass'][0]] > 7]
+            else:
+                act_data = self.act_data[
+                    self.act_data[self.find_name['mass'][1]] > 7]
         else:
             act_data = self.act_data
-        abs_act = self.find_name[abs_name][1]
-        ord_act = self.find_name[ord_name][1]
+
+        if self.between_fitres:
+            abs_act = self.find_name[abs_name][0]
+            ord_act = self.find_name[ord_name][0]
+        else:
+            abs_act = self.find_name[abs_name][1]
+            ord_act = self.find_name[ord_name][1]
         d1 = act_data[abs_act]
         d2 = act_data[ord_act]
         data = np.vstack([d1, d2])
@@ -669,20 +747,32 @@ class Checker(object):
         if abs_name == 'mass':
             sims_data = self.sims_data[
                 self.sims_data[self.find_name['mass'][0]] > 7]
-            act_data = self.act_data[
-                self.act_data[self.find_name['mass'][1]] > 7]
+            if self.between_fitres:
+                act_data = self.act_data[
+                    self.act_data[self.find_name['mass'][0]] > 7]
+            else:
+                act_data = self.act_data[
+                    self.act_data[self.find_name['mass'][1]] > 7]
         else:
             sims_data = self.sims_data
             act_data = self.act_data
 
         if survey != 'all':
             sims_data = sims_data[sims_data['IDSURVEY'].isin(
-                self.find_id.get(key) for key in survey)]
-            act_data = act_data[act_data['survey'].isin(survey)]
+                self.find_id[survey])]
+            if self.between_fitres:
+                act_data = act_data[act_data['IDSURVEY'].isin(
+                    self.find_id[survey])]
+            else:
+                act_data = act_data[act_data['survey'].isin(survey)]
 
         prophist = dict(alpha=alpha, density=True)
 
-        abs_sims, abs_act = self.find_name[abs_name][0:2]
+        if self.between_fitres:
+            abs_sims = self.find_name[abs_name][0]
+            abs_act = abs_sims
+        else:
+            abs_sims, abs_act = self.find_name[abs_name][0:2]
 
         _, binsv, _ = ax.hist(sims_data[abs_sims],
                               histtype=ht_sims,
@@ -732,19 +822,33 @@ class Checker(object):
         if (abs_name == 'mass') or (ord_name == 'mass'):
             sims_data = self.sims_data[
                 self.sims_data[self.find_name['mass'][0]] > 7]
-            act_data = self.act_data[
-                self.act_data[self.find_name['mass'][1]] > 7]
+            if self.between_fitres:
+                act_data = self.act_data[
+                    self.act_data[self.find_name['mass'][0]] > 7]
+            else:
+                act_data = self.act_data[
+                    self.act_data[self.find_name['mass'][1]] > 7]
         else:
             sims_data = self.sims_data
             act_data = self.act_data
 
         if survey != 'all':
-            sims_data = sims_data[sims_data['IDSURVEY'].isin([
-                self.find_id.get(key) for key in survey])]
-            act_data = act_data[act_data['survey'].isin(survey)]
+            sims_data = sims_data[sims_data['IDSURVEY'].isin(
+                self.find_id[survey])]
+            if self.between_fitres:
+                act_data = act_data[act_data['IDSURVEY'].isin(
+                    self.find_id[survey])]
+            else:
+                act_data = act_data[act_data['survey'].isin(survey)]
 
-        abs_sims, abs_act = self.find_name[abs_name][0:2]
-        ord_sims, ord_act = self.find_name[ord_name][0:2]
+        if self.between_fitres:
+            abs_sims = self.find_name[abs_name][0]
+            abs_act = abs_sims
+            ord_sims = self.find_name[ord_name][0]
+            ord_act = ord_sims
+        else:
+            abs_sims, abs_act = self.find_name[abs_name][0:2]
+            ord_sims, ord_act = self.find_name[ord_name][0:2]
 
         hb = ax.hexbin(sims_data[abs_sims],
                        sims_data[ord_sims],
@@ -1009,7 +1113,7 @@ class Checker(object):
 
     def show_modif(self, ax=None, drop=14,
                    modif_label='Mudif', show_leg=True,
-                   fmt_sims='o'):
+                   fmt_sims='o', color_sims='k'):
         if ax is None:
             fig = plt.figure(figsize=[8, 7])
             ax = fig.add_axes([0.1, 0.12, 0.8, 0.8])
@@ -1019,6 +1123,7 @@ class Checker(object):
             modif_plot = self.modif
         ax.errorbar(modif_plot['z'], modif_plot['MUDIF'],
                     yerr=modif_plot['MUDIFERR'],
-                    fmt=fmt_sims, label=modif_label)
+                    fmt=fmt_sims, color=color_sims,
+                    label=modif_label)
         if show_leg is True:
             ax.legend(ncol=1, loc='upper left')
