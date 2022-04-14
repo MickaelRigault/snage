@@ -94,23 +94,38 @@ class PromptDelayModel(object):
               "sigmadown": sigmadown_delayed}}
 
     # HOST MASS
+    # def set_distprop_mass(self,
+    #                       mu_prompt=9.23,
+    #                       sigmaup_prompt=0.96, sigmadown_prompt=0.47,
+    #                       mu_delayed=10.61,
+    #                       sigmaup_delayed=0.44, sigmadown_delayed=0.40):
+    #     """
+    #     Set the parameters of the SNe Ia mass distribution,
+    #     modeled as one asymm Gaussian for the prompt,
+    #     and one asymm Gaussian for the delayed.
+    #     """
+    #     self._distprop_mass = \
+    #         {"prompt":
+    #          {"mu": mu_prompt, "sigmaup": sigmaup_prompt,
+    #           "sigmadown": sigmadown_prompt},
+    #          "delayed":
+    #          {"mu": mu_delayed, "sigmaup": sigmaup_delayed,
+    #           "sigmadown": sigmadown_delayed}}
     def set_distprop_mass(self,
-                          mu_prompt=9.23,
-                          sigmaup_prompt=0.96, sigmadown_prompt=0.47,
-                          mu_delayed=10.61,
-                          sigmaup_delayed=0.44, sigmadown_delayed=0.40):
+                          mu_prompt=9.36,
+                          sigma_prompt=0.64,
+                          mu_delayed=10.52,
+                          sigma_delayed=0.37):
         """
         Set the parameters of the SNe Ia mass distribution,
         modeled as one Gaussian for the prompt,
-        and a Gaussian mixture for the delayed.
+        and one Gaussian for the delayed, based on SNF only data.
         """
         self._distprop_mass = \
             {"prompt":
-             {"mu": mu_prompt, "sigmaup": sigmaup_prompt,
-              "sigmadown": sigmadown_prompt},
+             {"mu": mu_prompt, "sigma": sigma_prompt},
              "delayed":
-             {"mu": mu_delayed, "sigmaup": sigmaup_delayed,
-              "sigmadown": sigmadown_delayed}}
+             {"mu": mu_delayed, "sigma": sigma_delayed}}
 
     # HUBBLE RESIDUALS
     def set_distprop_hr(self, mean_prompt=0.075, sigma_prompt=0.1,
@@ -245,11 +260,20 @@ class PromptDelayModel(object):
                 "No redshift dependency implemented for get_distpdf_mass()." +
                 "Set z=None")
 
-        prompt = asym_gaussian(
-            x, *list(self.distprop_mass["prompt"].values()), dx=dx)
-        delayed = asym_gaussian(
-            x, *list(self.distprop_mass["delayed"].values()), dx=dx)
-        return fprompt*prompt + (1-fprompt) * delayed
+        # prompt = asym_gaussian(
+        #     x, *list(self.distprop_mass["prompt"].values()), dx=dx)
+        # delayed = asym_gaussian(
+        #     x, *list(self.distprop_mass["delayed"].values()), dx=dx)
+        # return fprompt*prompt + (1-fprompt) * delayed
+        prompt = stats.norm.pdf(x,
+                                loc=self.distprop_mass['prompt']['mu'],
+                                scale=np.sqrt(self.distprop_mass['prompt']
+                                              ['sigma']**2 + dx**2))
+        delayed = stats.norm.pdf(x,
+                                 loc=self.distprop_mass['delayed']['mu'],
+                                 scale=np.sqrt(self.distprop_mass['delayed']
+                                               ['sigma']**2 + dx**2))
+        return fprompt*prompt + (1-fprompt)*(delayed)
 
     # - HR
     def get_distpdf_hr(self, x, fprompt, dx=None, **kwargs):
