@@ -94,6 +94,11 @@ class PromptDelayModel(object):
               "sigmadown": sigmadown_delayed}}
 
     # HOST MASS
+
+    # =================================================================== #
+    #                                2G2M4S                               #
+    # =================================================================== #
+
     # def set_distprop_mass(self,
     #                       mu_prompt=9.23,
     #                       sigmaup_prompt=0.96, sigmadown_prompt=0.47,
@@ -111,10 +116,15 @@ class PromptDelayModel(object):
     #          "delayed":
     #          {"mu": mu_delayed, "sigmaup": sigmaup_delayed,
     #           "sigmadown": sigmadown_delayed}}
+
+    # =================================================================== #
+    #                                2G2M2S                               #
+    # =================================================================== #
+
     def set_distprop_mass(self,
                           mu_prompt=9.36,
                           sigma_prompt=0.64,
-                          mu_delayed=10.52,
+                          mu_delayed=10.58,
                           sigma_delayed=0.37):
         """
         Set the parameters of the SNe Ia mass distribution,
@@ -260,11 +270,20 @@ class PromptDelayModel(object):
                 "No redshift dependency implemented for get_distpdf_mass()." +
                 "Set z=None")
 
+        # ----------------------------------------------------------- #
+        #                            2G2M4S                           #
+        # ----------------------------------------------------------- #
+
         # prompt = asym_gaussian(
         #     x, *list(self.distprop_mass["prompt"].values()), dx=dx)
         # delayed = asym_gaussian(
         #     x, *list(self.distprop_mass["delayed"].values()), dx=dx)
         # return fprompt*prompt + (1-fprompt) * delayed
+
+        # ----------------------------------------------------------- #
+        #                            2G2M2S                           #
+        # ----------------------------------------------------------- #
+
         prompt = stats.norm.pdf(x,
                                 loc=self.distprop_mass['prompt']['mu'],
                                 scale=np.sqrt(self.distprop_mass['prompt']
@@ -438,7 +457,7 @@ class PromptDelayModel(object):
         data["z"] = np.concatenate((np.ones((len(z), size)).T*z).T)\
             if z is not None else None
         # - Color
-        self._sample = pandas.DataFrame(data)
+        self._sample = pandas.DataFrame(data).sample(frac=1)
 
     def get_subsample(self, size, index_pdf=None):
         """Get the subsample (DataFrame) of the main self.sample given the pdf
